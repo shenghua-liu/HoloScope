@@ -42,22 +42,18 @@ class Ptype(object):
         pstr = '-'.join(strs)
         return pstr
 
-class BeyondDensityOpt:
+class HoloScopeOpt:
     def __init__(self, graphmat, qfun='exp', b=64, suspbd= 0.0,
                  aggmethod='joint', sdrop=True, mbd=0.5, sdropscale='linear',
-                 tsfile=None, tunit='s', ratefile=None, fileidstartzero=True,
-                 sigma=0.10, coe=0, qchopbd=10 ):
+                 tsfile=None, tunit='s', ratefile=None, fileidstartzero=True):
         'how many times of a user rates costumers if he get the cost balance'
-        self.coe = coe
-        #self.eog = 0.1
-        self.sigma = sigma #number of rating that a customer requires
+        self.coe = 0
         'the larger expbase can give a heavy penalty to the power-law curve'
         self.expbase = b #200 #64 #2**5, to make 0.8 susp ratio has 0.5 chance been abnormal
         self.scale = qfun #lin, const, pl, exp
         self.b = b
         self.aggmethod=aggmethod
         self.suspbd = suspbd #susp < suspbd will assign to zero
-        self.qchopbd = qchopbd #qchopbd effect both chopping users at start() and prod susp 
         self.priordropslop=sdrop
 
         self.graph=graphmat
@@ -116,13 +112,6 @@ class BeyondDensityOpt:
         self.bestfbs = np.array([])
         self.bestbsusps = np.array([])
 
-        self.qchop = False # if do the quick chop at the begining
-        self.qchopusers = np.array([])
-        if self.qchop:
-            self.excludeprods=np.argwhere( self.indegrees < self.qchopbd
-                                         ).flatten()
-        else:
-            self.excludeprods=np.array([])
         '''
         with quick chop, not all the users are suitable for adding
         we do not want to add quick chopping users back
@@ -174,41 +163,7 @@ class BeyondDensityOpt:
         self.graphc = self.graph.tocsc(copy=False)
         return
 
-    'No use. Notice: the algorithm use default usesigma'
-    def maxobjfunc_sigma(self, A, fbs, bsusps=None, usesigma=True):
-        'todo: use lil_matrix for fbs, and use dot for sum'
-        '''
-            fbs=lil_matrix(fbs)
-            bsusps=lil_matrix(fbs)
-            fbs.dot(bsusps) #check
-        '''
-        nu = 0.0
-        de = 0.0
-        numA = np.sum(A)
-        #de = np.sum(fbs)
-        'opt2 camouflag resistence'
-        de = numA + bsusps.sum() #math.sqrt(numA*bsusps.sum())#similar
-        if de == 0 and numA == 0:
-            return 0
-
-        if usesigma is False:
-            fbs2 = fbs**2/float(numA)
-            sigma = 1e-3
-        else:
-            fbs2 = fbs
-            sigma = opt.sigma
-
-        #suspidx = np.where(fbs>=sigma * numA)[0] #note: use !fbs here
-        suspidx = np.array([True]*len(fbs))
-        if bsusps is None:
-            nu = np.sum(fbs2[suspidx])
-        else:
-            nu = np.dot(fbs2[suspidx], bsusps[suspidx])
-
-        res = nu/np.float64( de + self.coe * numA )
-        return res
-
-    'new objective with no f_A(v)/|A|, and no sigma'
+    'new objective with no f_A(v)/|A|'
     def maxobjfunc(self, A, fbs, bsusps=None):
         nu = 0.0
         de = 0.0
@@ -216,14 +171,11 @@ class BeyondDensityOpt:
         de = numA + bsusps.sum() #math.sqrt(numA*bsusps.sum())#similar
         if numA == 0:
             return 0
-        #sigma = 1e-3
-        #suspidx = np.where(fbs>=sigma * numA)[0]
-        #nu = np.dot(fbs[suspidx], bsusps[suspidx])
         if bsusps is not None:
             nu = np.dot(fbs, bsusps)
         else:
             nu = fbs.sum()
-        res = nu/np.float64( de + self.coe * numA )
+        res = nu/np.float64( de )
         return res
 
     def aggregationMultiProp(self, mbs, method='sum'):
@@ -303,9 +255,6 @@ class BeyondDensityOpt:
             bs = self.evalsusp4rate(suspusers)
             multibsusps[Ptype.rate] = bs
         bsusps = self.aggregationMultiProp(multibsusps, self.aggmethod)
-        #lessbdidx = np.argwhere(fbs < self.sigma * sizeA).flatten()
-        if self.qchop:
-            bsusps[self.excludeprods] = 0.0
         bsusps = self.qfunc(bsusps, fbs=fbs, scale=scale)
         return bsusps
     'has a problem to keep large indegree of v'
@@ -319,12 +268,6 @@ class BeyondDensityOpt:
             bsusps *= 0
         return bsusps
 
-    def quickchopUsers(self):
-        possibleB = np.argwhere(self.indegrees >= self.qchopbd).flatten()
-        'no any contribution to possibleB'
-        cusers = np.argwhere( self.graphc[:,possibleB].getnnz(1) <= 0 )[:,0]
-        return cusers
-
     def initpimsuspects(self, suspusers, ptype):
         if Ptype.ts in ptype:
             self.tspim.setupsuspects(suspusers)
@@ -337,12 +280,6 @@ class BeyondDensityOpt:
         return
 
     def start(self, A0, ptype=[Ptype.ts]):
-        if self.qchop is True:
-            self.qchopusers = self.quickchopUsers()
-            for i in self.qchopusers:
-                A0[i] = 0
-            self.wholeaddcands = np.delete(np.arange(self.nU, dtype=int),
-                                           self.qchopusers)
         self.A = A0
         self.npropA = np.sum(A0)
         users = A0.nonzero()[0]
@@ -377,7 +314,6 @@ class BeyondDensityOpt:
         '''greedy algorithm'''
         maxint = np.iinfo(np.int64).max/2
         delscores = np.array([maxint]*self.nU)
-        #abproducts = np.argwhere( self.fbs >= self.sigma )[:,0]
         delcands = self.A.nonzero()[0]
         #deluserCredit = self.graphr[delcands,:].tocsc()[:,abproducts].sum(1).getA1()
         deluserCredit = self.graphr[delcands,:].dot(self.bsusps)
@@ -410,8 +346,6 @@ class BeyondDensityOpt:
             MT.changeVal(z, maxint) #make the min to the largest
             '''changed abnormal products since of user deletion.
             To be optimized for efficency
-            The following excludeProds is not assuming the weight is 1 or
-            weighted
             '''
             '''"opt 1"
             remainusers = self.Y.nonzero()[0]
@@ -490,11 +424,6 @@ class BeyondDensityOpt:
             if i==3:#for performance test
                 break
             '''
-        '''
-        if np.sum(self.A) == 0:
-            print '\nNo abnormal area under conditions. sigma:{}, coe:{}'.format(
-                self.sigma, self.coe)
-        '''
         print ''
         return np.sum(self.A)
 
@@ -634,13 +563,13 @@ class BeyondDensityOpt:
         print 'generate tensorfile with tunit:{}, tbins:{}'.format(tunit,
                                                                    tbindic[tunit])
         if self.matricizetenor is None:
-            matricize_start = time.time()
+            matricize_start = time.clock()
             sm, rindexcol = self.tenormatricization(self.tspim, self.ratepim,
                     tbindic, rbins, mtype=coo_matrix,
                     dropweight=self.priordropslop,
                     logdegree=False)
             self.matricizetenor = sm
-            print '::::matricize time cost: ', time.time() - matricize_start
+            print '::::matricize time cost: ', time.clock() - matricize_start
         sm = self.matricizetenor
         print "matricize {}x{} and svd dense... ..."\
                 .format(sm.shape[0], sm.shape[1])
@@ -822,43 +751,12 @@ class BeyondDensityOpt:
         sbsusps=sbsusps.multiply(sfbs/float(sizeA))
         return sbsusps
 
-    'no need for f_A(v)/|A| in objective'
-    def sMaxobjfunc_sigma(self, sizeA, sfbs, sbsusps=None, usesigma=True):
-        #de = sfbs.sum()
-        'opt 2 camouflage resistance'
-        de = sizeA + sbsusps.sum() if sbsusps is not None else \
-                sizeA + self.nV
-        ''' #opt 1
-        lessfbsidx = sfbs.data < opt.sigma * sizeA
-        nsfbs = sfbs.copy()
-        nsfbs.data[lessfbsidx] = 0
-        nu = sbsusps.multiply(nsfbs).sum()
-        '''
-        if de==0 and sizeA==0:
-            return 0
-        #opt2 for performance
-        nsfbs=sfbs.toarray()[0]
-        if usesigma is False:
-            nsfbs = nsfbs**2/float(sizeA)
-            sigma = 1e-3
-        else:
-            sigma = opt.sigma
-        nsfbs[ sfbs.toarray()[0] < sigma * sizeA ] = 0
-        if sbsusps is not None:
-            nu = sbsusps.dot(nsfbs)[0]
-        else:
-            nu = nsfbs.sum()
-        obj = nu/np.float64( de + self.coe * sizeA )
-        return obj
-
-    'effective: no need for f_A(v)/|A|, and sigma any more'
+    'effective: no need for f_A(v)/|A|'
     def sMaxobjfunc(self, sizeA, sfbs, sbsusps):
         de = sizeA + sbsusps.sum()
         if de==0 and sizeA==0:
             return 0
         nsfbs=sfbs.toarray()[0]
-        #sigma=1e-3
-        #nsfbs[ nsfbs < sigma * sizeA ] = 0
         nu = sbsusps.dot(nsfbs)[0]
         obj = nu/np.float64( de + self.coe * sizeA )
         return obj
@@ -1142,7 +1040,7 @@ def evalTriDense(opt):
     print 'best o: {}'.format(bo)
     return o1,o2,o3,o,bo
 
-def beyonddensity(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
+def HoloScope(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
                   sdrop=True, mbd=0.5, tsfile=None, tunit='s',
                   ratefile=None, fileidstartzero=True,
                   numSing=10, rbd='avg', shaving=True, inflating=False,
@@ -1170,7 +1068,7 @@ def beyonddensity(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
         ratefile = None
     print inprop
 
-    opt = BeyondDensityOpt(sm, qfun=qfun, b=b, suspbd=epsilon,
+    opt = HoloScopeOpt(sm, qfun=qfun, b=b, suspbd=epsilon,
                            aggmethod = aggmethod, sdrop=sdrop,mbd=mbd,
                            tsfile=tsfile, tunit=tunit, ratefile=ratefile,
                            fileidstartzero=fileidstartzero)
@@ -1178,7 +1076,7 @@ def beyonddensity(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
     opt.nlocalbests=[] #mainly used for fastgreedy
     gsrows,gbscores,gbestvx = 0,0,0
     for k in xrange(nblock):
-        start_time = time.time()
+        start_time = time.clock()
         if alg == 'greedy':
             n1, n2 = sm.shape
             if n1 + n2 > 1e4:
@@ -1195,7 +1093,7 @@ def beyonddensity(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
                     .format(alg, numSing, rbd, shaving, inflating)
             print 'initial start'
             opt.initfastgreedy(ptype, numSing, rbd)
-            print "::::Finish Init @ ", time.time() - start_time
+            print "::::Finish Init @ ", time.clock() - start_time
             print 'fast greedy algorithm ...'
             opt.fastgreedy(inflating=inflating, shaving=shaving)
         elif alg == 'kcoregreedy':
@@ -1205,7 +1103,7 @@ def beyonddensity(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
             print 'No such algorithm: '+alg
             sys.exit(1)
 
-        print "::::Finish Algorithm @ ", time.time() - start_time
+        print "::::Finish Algorithm @ ", time.clock() - start_time
 
         srows = opt.bestA.nonzero()[0]
         bscores = np.multiply(opt.bestfbs, opt.bestbsusps)
@@ -1337,7 +1235,7 @@ if __name__=="__main__":
     algs = ['greedy', 'fastgreedy', 'kcoregreedy']
     alg=algs[1]
     for qfun, b in  paragrid:
-        bdres = beyonddensity(sm, alg, ptype, qfun, b, epsilon=suspbd,
+        bdres = HoloScope(sm, alg, ptype, qfun, b, epsilon=suspbd,
                              aggmethod='joint', sdrop=sdrop,
                              tsfile=umtsfnm, tunit=tunit, ratefile=umratefnm,
                              fileidstartzero=fileidstartzero,
@@ -1353,8 +1251,7 @@ if __name__=="__main__":
         continue #skip the following
 
         if alg == 'greedy':
-            print """--processing no sigma, no coe, no qchopb,
-                    qfun:{}, b:{}, suspbd:{} """.format(opt.scale, opt.b, opt.suspbd)
+            print """--processing qfun:{}, b:{}, suspbd:{}""".format(opt.scale, opt.b, opt.suspbd)
             A = np.ones(opt.nU,dtype=int)
             print 'initial start'
             opt.start(A, ptype=ptype)
@@ -1362,7 +1259,7 @@ if __name__=="__main__":
             print 'greedy algorithm ...'
             opt.greedyshaving(sampleB=False)
         elif alg == 'fastgreedy':
-            print """--processing no sigma, no coe, qfun:{}, b: {}, suspbd: {},
+            print """--processing qfun:{}, b: {}, suspbd: {},
                 roundbd: {}""".format(opt.scale, opt.b, opt.suspbd, rbd)
             print 'initial start'
             opt.initfastgreedy(ptype, numSing, rbd)
@@ -1376,11 +1273,9 @@ if __name__=="__main__":
         figs[T] = opt.drawObjectiveCurve(
             respath+'curvealg{}_b{}.eps'.format(alg, opt.scale, opt.b))
         '''
-        fig = opt.drawObjectiveCurve(
-            respath+'convergecurve_s{}c{}.png'.format(sigma, coe))
+        fig = opt.drawObjectiveCurve(respath+'convergecurve.png')
         #fig.show()
-        fig2 = opt.drawAccRejcnts(
-            respath+'acceptrejectcnts_s{}c{}.png'.format(sigma, coe))
+        fig2 = opt.drawAccRejcnts(respath+'acceptrejectcnts}.png')
         #fig2.show()
         '''
         print '\n\toptimized A size: {}'.format(np.sum(opt.bestA))
