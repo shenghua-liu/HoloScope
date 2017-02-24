@@ -84,6 +84,6 @@ The results:
 <p align="center">
   <img src="images/performCmpDensity.png" width="350"/>
   <img src="images/performancecmpall.png" width="350"/>
-  <img src="images/wbexp.png" height="350"/>
+  <img src="images/wbexp.png" width="250"/>
   <img src="images/effeciencyexpelec.png" width="350"/>
 </p>
