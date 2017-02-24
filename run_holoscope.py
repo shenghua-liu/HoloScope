@@ -84,8 +84,7 @@ if __name__=="__main__":
         alg = 'fastgreedy'#'greedy' #
         ptype=[Ptype.freq]
         qfun, b='exp', 128
-
-    if demoid == 1:
+    elif demoid == 1:
         print 'demo on real data with injected labels'
         rootnm = 'yelp'
         path = './testdata/'
@@ -94,12 +93,12 @@ if __name__=="__main__":
         freqfile = path+rootnm+'.edgelist'
         ratefile = path+rootnm+'rate.dict'
         tsfile = path+rootnm+'ts.dict'
-        if not (os.path.isfile(freqfile)):
+        if not (os.path.isfile(freqfile+'.gz')):
             print 'file does not exists'
             sys.exit(1)
-        if not os.path.isfile(ratefile):
+        if not os.path.isfile(ratefile+'.gz'):
             ratefile=None
-        if not os.path.isfile(tsfile):
+        if not os.path.isfile(tsfile+'.gz'):
             tsfile=None
         'inject unpopular object with indegree at most 100'
         bcnt, goal, popbd = 200, 200, 100
@@ -118,6 +117,9 @@ if __name__=="__main__":
         alg = 'fastgreedy'
         ptype  = [Ptype.freq, Ptype.ts, Ptype.rate]
         qfun, b = 'exp', 32
+    else:
+        print 'no demo {}'.format(demoid)
+        print 'try demo id 1 or 2'
 
     M = M.asfptype()
     bdres = HoloScope(M, alg, ptype, qfun=qfun, b=b,

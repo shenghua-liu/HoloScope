@@ -1,4 +1,18 @@
+import os,sys
 from scipy.sparse import csc_matrix, coo_matrix, csr_matrix, lil_matrix
+
+def myreadfile(fnm, mode):
+    if '.gz' == fnm[-3:]:
+        fnm = fnm[:-3]
+    if os.path.isfile(fnm):
+        f = open(fnm, mode)
+    elif os.path.isfile(fnm+'.gz'):
+        import gzip
+        f = gzip.open(fnm+'.gz', mode)
+    else:
+        print 'file: {} or its zip file does NOT exist'.format(fnm)
+        sys.exit(1)
+    return f
 
 def saveSimpleDictData(simdict, outdata):
     with open(outdata, 'w') as fw:
@@ -8,7 +22,7 @@ def saveSimpleDictData(simdict, outdata):
 
 def loadSimpleDictData(indata):
     simdict={}
-    with open(indata, 'r') as fr:
+    with myreadfile(indata, 'r') as fr:
         lines=fr.readlines()
         for line in lines:
             line = line.strip().split(':')
@@ -30,7 +44,7 @@ def saveDictListData(dictls, outdata):
 
 def loadDictListData(indata, ktype=str, vtype=str):
     dictls={}
-    with open(indata, 'r') as fr:
+    with myreadfile(indata, 'r') as fr:
         lines = fr.readlines()
         for line in lines:
             line = line.strip().split(':')
@@ -49,7 +63,7 @@ def saveSimpleListData(simls, outdata):
 
 def loadSimpleList(indata, dtype=None):
     sl=[]
-    with open(indata, 'r') as fi:
+    with myreadfile(indata, 'r') as fi:
         for e in fi:
             e = e.strip()
             if e == '':
@@ -71,7 +85,7 @@ def save2DarrayData(sarray,outdata):
 
 def load2DarrayData(indata):
     a2d=[]
-    with open(indata, 'r') as fi:
+    with myreadfile(indata, 'r') as fi:
         for l in fi:
             arr = l.strip().split(' ')
             a2d.append(arr)
@@ -102,7 +116,7 @@ def readedge2squarecscm(ifile, weighted=False, delimiter=' '):
     xs=[]
     ys=[]
     data=[]
-    with open(ifile, 'rb') as fin:
+    with myreadfile(ifile, 'rb') as fin:
         for line in fin:
             coords=line.strip().split(delimiter)
             xs.append(int(coords[0]))
@@ -138,7 +152,7 @@ def readedge2coom(ifile, weighted=False, delimiter=' ', idstartzero=True):
         offset = 0
     else:
         offset = -1
-    with open(ifile, 'rb') as fin:
+    with myreadfile(ifile, 'rb') as fin:
         for line in fin:
             coords=line.strip().split(delimiter)
             xs.append( int(coords[0]) + offset )
@@ -167,7 +181,7 @@ def loadedge2sm(ifile, mtype=csc_matrix, weighted=False, dtype=int, delimiter=' 
         offset = 0
     else:
         offset = -1
-    with open(ifile, 'rb') as fin:
+    with myreadfile(ifile, 'rb') as fin:
         for line in fin:
             coords=line.strip().split(delimiter)
             xs.append( int(coords[0]) + offset )
