@@ -1,6 +1,3 @@
-
-import numpy as np
-import scipy.io as sio
 from scipy.sparse import csc_matrix, coo_matrix, csr_matrix, lil_matrix
 
 def saveSimpleDictData(simdict, outdata):
@@ -48,10 +45,6 @@ def saveSimpleListData(simls, outdata):
     with open(outdata, 'w') as fw:
         fw.write('\n'.join(map(str, simls)))
         fw.write('\n')
-        '''
-        for v in simls:
-            fw.write("{}\n".format(v))
-        '''
         fw.close()
 
 def loadSimpleList(indata, dtype=None):
@@ -158,8 +151,6 @@ def readedge2coom(ifile, weighted=False, delimiter=' ', idstartzero=True):
     M = max(xs) + 1
     N = max(ys) + 1
     coom = coo_matrix((data, (xs, ys)), shape=(M,N))
-    #M1 = coom > 0
-    #return M1.astype('int')
     return coom
 
 def loadedge2sm(ifile, mtype=csc_matrix, weighted=False, dtype=int, delimiter=' ',
@@ -216,26 +207,8 @@ def savesm2edgelist(sm, ofile, idstartzero=True, delimiter=' ', kformat=None):
         fout.close()
     return
 
-def procHomo():
-    hm=sio.loadmat("../Homo_sapiens.mat")
-    hel = scsmatrix2edgelist(hm['network'])
-    writeedgelist(hel, "../HomoSapiens-dataset/Homo_sapiens.edgelist")
-    hges = scsmatrix2groupedges(hm['group'])
-    writegroupedges(hges, "../HomoSapiens-dataset/Homo_sapiens.groupedges")
-
-def procWiki():
-    wm = sio.loadmat("../POS-wikipedia.mat")
-    wel = scsmatrix2edgelist(wm['network'], weighted=True)
-    writeedgelist(wel, "../WikipediaPOS-dataset/Wikipedia_POS.edgelist",
-                  weighted=True)
-    wges = scsmatrix2groupedges(wm['group'])
-    writegroupedges(wges, "../WikipediaPOS-dataset/Wikipedia_POS.groupedges")
 
 if __name__== "__main__":
-    #procHomo()
-    #procWiki()
-    from os.path import expanduser
-    home = expanduser("~")
-    path= home+'/Data/wbdata/'
-    ifile = path+"usermsg.edgelist"
-    sm = loadedge2sm(ifile, csr_matrix, idstartzero=False)
+    path= './testdata/'
+    ifile = path+"yelp.edgelist"
+    sm = loadedge2sm(ifile, csr_matrix, idstartzero=True)

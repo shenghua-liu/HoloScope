@@ -1,22 +1,15 @@
 import sys, os, time
-sys.path.append('../')
 import numpy as np
 import scipy as sci
-import numpy.random as nr
 import scipy.sparse.linalg as slin
 import copy
-from collections import OrderedDict
 from mytools.MinTree import MinTree
-from scipy.sparse import coo_matrix, csc_matrix, csr_matrix, lil_matrix
-from mytools.ioutil import loadedge2sm, saveSimpleListData
-import matplotlib.pyplot as plt
+from scipy.sparse import coo_matrix, csr_matrix, lil_matrix
+from mytools.ioutil import loadedge2sm
 from gendenseblock import *
 from matricizationSVD import *
 from edgepropertyAnalysis import *
-from os.path import expanduser
-from scipy.stats import rankdata
 import math
-home = expanduser("~")
 
 class Ptype(object):
     freq =0
@@ -43,17 +36,17 @@ class Ptype(object):
         return pstr
 
 class HoloScopeOpt:
-    def __init__(self, graphmat, qfun='exp', b=64, suspbd= 0.0,
-                 aggmethod='joint', sdrop=True, mbd=0.5, sdropscale='linear',
-                 tsfile=None, tunit='s', ratefile=None, fileidstartzero=True):
+    def __init__(self, graphmat, qfun='exp', b=32,
+                 aggmethod='sum', sdrop=True, mbd=0.5, sdropscale='linear',
+                 tsfile=None, tunit='s', ratefile=None):
         'how many times of a user rates costumers if he get the cost balance'
         self.coe = 0
         'the larger expbase can give a heavy penalty to the power-law curve'
-        self.expbase = b #200 #64 #2**5, to make 0.8 susp ratio has 0.5 chance been abnormal
-        self.scale = qfun #lin, const, pl, exp
+        self.expbase = b
+        self.scale = qfun
         self.b = b
         self.aggmethod=aggmethod
-        self.suspbd = suspbd #susp < suspbd will assign to zero
+        self.suspbd = 0.0 #susp < suspbd will assign to zero
         self.priordropslop=sdrop
 
         self.graph=graphmat
@@ -62,6 +55,7 @@ class HoloScopeOpt:
         self.matricizetenor=None
         self.nU, self.nV=graphmat.shape
         self.indegrees = graphmat.sum(0).getA1()
+        self.e0 = math.log(graphmat.sum(), self.nU) #logrithm of edges 
         print 'matrix size: {} x {}\t#edges: {}'.format(self.nU, self.nV,
                                                           self.indegrees.sum())
 
@@ -76,18 +70,16 @@ class HoloScopeOpt:
         if tsfile is not None:
             self.mbd = mbd #multiburst bound
             self.tspim = MultiEedgePropBiGraph(self.orggraph)
-            self.tspim.load_from_edgeproperty(tsfile,
-                                             idstartzero=fileidstartzero,
-                                             mtype=csr_matrix, dtype=np.int64)
+            self.tspim.load_from_edgeproperty(tsfile, mtype=csr_matrix, dtype=np.int64)
             self.tspim.setup_ts4all_sinks(tunit)
             if self.priordropslop:
                 'slops weighted with max burst value'
                 self.weightWithDropslop(weighted=True, scale=sdropscale)
+        else:
+            self.priordropslop = False #no input of time attribute
         if ratefile is not None:
             self.ratepim = MultiEedgePropBiGraph(self.orggraph)
-            self.ratepim.load_from_edgeproperty(ratefile,
-                                                idstartzero=fileidstartzero,
-                                                mtype=csr_matrix, dtype=float)
+            self.ratepim.load_from_edgeproperty(ratefile, mtype=csr_matrix, dtype=float)
             self.ratepim.setup_rate4all_sinks()
 
         'weighed with idf prior from Fraudar'
@@ -96,7 +88,6 @@ class HoloScopeOpt:
         self.windegrees = self.graphc.sum(0).getA1()
         self.woutdegrees = self.graphr.sum(1).getA1()
 
-        'No Need: optimize the fbs, bsusps as the sparse'
         self.A = np.array([]) #binary array
         self.fbs = np.zeros(graphmat.shape[1], dtype=np.int) #frequency of bs in B
         '\frac_{ f_A{(bi)} }{ f_U{(bi)}}'
@@ -112,14 +103,6 @@ class HoloScopeOpt:
         self.bestfbs = np.array([])
         self.bestbsusps = np.array([])
 
-        '''
-        with quick chop, not all the users are suitable for adding
-        we do not want to add quick chopping users back
-        '''
-        self.wholeaddcands = np.arange(self.nU, dtype=int)
-        '''the number of proper users to be considered. if quick chopping (qchop
-        is True), npropA will be the number of nonzeros'''
-        self.npropA = self.nU
 
     def weightWithDropslop(self, weighted, scale='log1p'):
         'weight the adjacency matrix with the sudden drop of ts for each col'
@@ -179,6 +162,8 @@ class HoloScopeOpt:
         return res
 
     def aggregationMultiProp(self, mbs, method='sum'):
+        if method == 'rank':
+            from scipy.stats import rankdata
         rankmethod = 'average'
         k=60 #for rank fusion
         if len(mbs) == 1:
@@ -188,12 +173,8 @@ class HoloScopeOpt:
                 return np.reciprocal(rb+k) * k
             else:
                 return val
-        if method == 'joint':
-            'use joint probability'
-            bsusps = mbs.values()[0]
-            for v in mbs.values()[1:]:
-                bsusps = np.multiply(bsusps, v)
-        elif method == 'sum':
+        if method == 'sum':
+            'this is the joint probability of exp form of prob'
             bsusps = mbs.values()[0]
             for v in mbs.values()[1:]:
                 bsusps += v
@@ -211,7 +192,6 @@ class HoloScopeOpt:
     #@profile
     def evalsusp4ts(self, suspusers, multiburstbd = 0.5, weighted=True):
         'the id of suspusers consistently starts from 0 no matter the source'
-        #self.tspim.setupsuspects(suspusers)
         incnt, inratio = self.tspim.suspburstinvolv(multiburstbd, weighted,
                                                     delta=True)
         suspts=inratio
@@ -219,7 +199,6 @@ class HoloScopeOpt:
 
     #@profile
     def evalsusp4rate(self, suspusers, neutral=False, scale='max'):
-        #self.ratepim.setupsuspects(suspusers), scaling=False
         susprates = self.ratepim.suspratedivergence(neutral, delta=True)
         if scale == 'max':
             assert(self.ratepim.maxratediv > 0)
@@ -240,12 +219,6 @@ class HoloScopeOpt:
             bs = np.zeros(self.nV)
             bs[posids] = np.divide(fbs[posids], self.windegrees[posids].astype(np.float64))
             multibsusps[Ptype.freq] = bs
-            if scale == 'log' or scale == 'logratio':
-                'log, logratio only works for freq'
-                multibsusps[Ptype.freq] =\
-                        self.qfunc(bs, sfbs = sfbs.toarray()[0], scale=scale)
-                scale='pl'
-                self.b, self.suspbd = 1, 0.0
         if Ptype.ts in ptype:
             suspusers = A.nonzero()[0]
             bs = self.evalsusp4ts(suspusers, multiburstbd=self.mbd)
@@ -256,16 +229,6 @@ class HoloScopeOpt:
             multibsusps[Ptype.rate] = bs
         bsusps = self.aggregationMultiProp(multibsusps, self.aggmethod)
         bsusps = self.qfunc(bsusps, fbs=fbs, scale=scale)
-        return bsusps
-    'has a problem to keep large indegree of v'
-    def prodsuspicious_no(self, fbs, sizeA=None, scale='exp'):
-        posids = self.windegrees>0
-        bs = np.zeros(self.nV)
-        bs[posids] = np.divide(fbs[posids], self.windegrees[posids].astype(np.float64))
-        if sizeA > 0:
-            bsusps = np.multiply(bsusps, fbs/float(sizeA))
-        else:
-            bsusps *= 0
         return bsusps
 
     def initpimsuspects(self, suspusers, ptype):
@@ -281,7 +244,6 @@ class HoloScopeOpt:
 
     def start(self, A0, ptype=[Ptype.ts]):
         self.A = A0
-        self.npropA = np.sum(A0)
         users = A0.nonzero()[0]
         self.ptype=ptype # the property type that the postiorer uses
         self.fbs = self.graphr[users].sum(0).getA1()
@@ -300,22 +262,16 @@ class HoloScopeOpt:
     def candidatefbs(self, z):
         'increase or decrease'
         coef = 1 if self.A[z] == 0 else -1
-        '''
-        for  b in self.graphr.getrow(z).nonzero()[0]:
-            candfbs[b] += coef * self.graph[z,b]
-            #assert(candfbs[b].all()>=0)
-        '''
         bz = self.graphr[z]
         candfbs = (coef*bz + self.fbs).getA1()
         return candfbs
 
     #@profile
-    def greedyshaving(self, sampleB=False):
+    def greedyshaving(self):
         '''greedy algorithm'''
         maxint = np.iinfo(np.int64).max/2
         delscores = np.array([maxint]*self.nU)
         delcands = self.A.nonzero()[0]
-        #deluserCredit = self.graphr[delcands,:].tocsc()[:,abproducts].sum(1).getA1()
         deluserCredit = self.graphr[delcands,:].dot(self.bsusps)
         delscores[delcands] = deluserCredit
         print 'set up the greedy min tree'
@@ -333,7 +289,6 @@ class HoloScopeOpt:
             self.yfbs = self.candidatefbs(z)
             Ylist = Y.nonzero()[0]
             self.setdeltapimsusp(z, Ylist, add=False)
-            #self.yfbs = self.yfbs.astype(np.float64, copy=False )
             self.ybsusps = self.prodsuspicious(self.yfbs, self.Y,
                                                ptype=self.ptype)
             vy = self.maxobjfunc(self.Y, self.yfbs, self.ybsusps)
@@ -343,71 +298,16 @@ class HoloScopeOpt:
                 self.bestfbs = self.yfbs
                 self.bestbsusps = self.ybsusps
                 self.bestvx = vy
-            MT.changeVal(z, maxint) #make the min to the largest
-            '''changed abnormal products since of user deletion.
-            To be optimized for efficency
-            '''
-            '''"opt 1"
-            remainusers = self.Y.nonzero()[0]
-            remusermat = self.graphr[remainusers,:]
-            #the remaining users should change their weight in MinT
-            remuserdelta = remusermat.dot(self.ybsusps - self.bsusps)
-            for u, cc in zip(remainusers, remuserdelta):
-                if cc == 0:
-                    continue
-                else:
-                    MT.changeVal(u,cc)
-            '''
-            '''"opt 2"
-            effectusers = self.u2ugraph[z].nonzero()[1] #may be effected users
-            effectusermat = self.graphr[effectusers]
-            effectuserdelta = effectusermat.dot(self.ybsusps - self.bsusps)
-            for u,cc in zip(effectusers, effectuserdelta):
-                if cc == 0:
-                    'no effect on user u by deleting z'
-                    continue
-                else:
-                    MT.changeVal(u,cc)
-            '''
-            '''"opt 3"
+            MT.changeVal(z, maxint) #make the min to the largest for deletion
             prodchange = self.ybsusps - self.bsusps
             effectprod = prodchange.nonzero()[0]
-            userdelta = np.zeros(self.nU,dtype=int)
-            for p in effectprod:
-                for u, freq in zip(self.graphT.rows[p], self.graphT.data[p]):
-                    if self.Y[u] == 1:
-                        userdelta[u] += freq * prodchange[p]
-            for u in userdelta.nonzero()[0]:
-                MT.changeVal(u, userdelta[u])
-            '''
-            if not sampleB:
-                'opt 4: current best'
-                prodchange = self.ybsusps - self.bsusps
-                effectprod = prodchange.nonzero()[0]
-                if len(effectprod)>0:
-                    #this is delta for all users
-                    userdelta = self.graphc[:,effectprod].dot(prodchange[effectprod])
-                    yuserdelta = userdelta[Ylist]
-                    for u in yuserdelta.nonzero()[0]:
-                        uidx = Ylist[u]
-                        MT.changeVal(uidx,yuserdelta[u])
-            else:
-                'random sample opt5 based on opt4'
-                effectprod = self.graphr[z].nonzero()[1] #ids
-                l = len(effectprod)
-                if l > 0:
-                    beta = min(1.0, 500.0/l)
-                    #beta = max(0.1, beta)
-                    samp = np.random.binomial(1, beta, l)
-                    seffectprod = effectprod[samp.nonzero()[0]]
-                    bsuspchange=self.ybsusps[seffectprod] - self.bsusps[seffectprod]
-                    userdelta = self.graphc[:,seffectprod].dot(bsuspchange)
-                    userdelta = userdelta[list(setY)]
-                    #userdelta = np.multiply(userdelta, self.Y) #slow
-                    userdelta = userdelta/float(beta) #expectation
-                    for u in userdelta.nonzero()[0]:
-                        MT.changeVal(u,userdelta[u])
-
+            if len(effectprod)>0:
+                #this is delta for all users
+                userdelta = self.graphc[:,effectprod].dot(prodchange[effectprod])
+                yuserdelta = userdelta[Ylist]
+                for u in yuserdelta.nonzero()[0]:
+                    uidx = Ylist[u]
+                    MT.changeVal(uidx,yuserdelta[u])
             'delete next user, make current to next'
             self.A = self.Y
             sizeA -= 1
@@ -420,20 +320,13 @@ class HoloScopeOpt:
                 sys.stdout.write('.')
                 sys.stdout.flush()
             i+=1
-            '''
-            if i==3:#for performance test
-                break
-            '''
         print ''
         return np.sum(self.A)
 
-    '''
-    Since the deleting greedy starts from a whole set U, it has a complexity
-    with |E||E|/|V|.
-    We use adding greedy starting from one row
-    default: ptype=[Ptype.freq], numSing=10, rbd='avg'
-    '''
     def initfastgreedy(self, ptype, numSing, rbd='avg'):
+        '''
+        default: ptype=[Ptype.freq], numSing=10, rbd='avg'
+        '''
         self.ptype=ptype
         self.numSing=numSing #number of singular vectors we consider
         self.avgexponents=[]
@@ -449,17 +342,7 @@ class HoloScopeOpt:
         data = self.sindegreciprocal.data
         nozidx = data.nonzero()[0]
         self.sindegreciprocal.data[nozidx] = data[nozidx]**(-1)
-        '''
-        self.sA = set({cutrows[0]}) #a set of A
-        self.sfbs = csr_matrix(self.graphr[list(self.sA)].sum(0)) #sparse of fbs
-        sbsusp = self.sProdsuspicious(self.sfbs, scale=self.scale,
-        sizeA=len(self.sA))
-        'obj vale'
-        self.bestA = set(self.sA)
-        self.bestvx = self.vx
-        self.vx = self.sMaxobjfunc(len(self.sA), self.sfbs, sbsusp)
-        self.vxs = [self.vx]
-        '''
+
         return
 
     def tenormatricization(self, tspim, ratepim, tbindic, rbins,
@@ -476,8 +359,6 @@ class HoloScopeOpt:
             dl = len(rtcm.data)
         if dropweight is True and tspim is not None:
             w = np.multiply(tspim.dropfalls, tspim.dropslops)
-            #if self.tunit == 's':
-            #    w *= 3600
             w = np.log1p(w) + 1
         else:
             w = np.ones(self.nV)
@@ -552,11 +433,7 @@ class HoloScopeOpt:
         '''
         afile = self.tsfile if self.tsfile is not None else self.ratefile
         ipath =  os.path.dirname(os.path.abspath(afile))
-        if 'wbdata' not in ipath:
-            tbindic={'s':24*3600, 'd':30}
-        else:
-            print 'init for wbdata'
-            tbindic={'s':3600, 'd':30}
+        tbindic={'s':24*3600, 'd':30}
         'edgepropertyAnalysis has already digitized the ratings'
         rbins = lambda x: int(x) #lambda x: 0 if x<2.5 else 1 if x<=3.5 else 2
         tunit = self.tunit
@@ -598,11 +475,9 @@ class HoloScopeOpt:
             self.avgexponents.append(math.log(jr, self.nU))
             'consider the # limit'
             if self.nU > 1e6:
-                en = math.log(self.graph.sum(), self.nU)
-                e0 = 1.6 # math.sqrt(3) # make sure 3/e0 < 2
-                ep = max(e0, en) # claim ep < 2
+                e0 = self.e0
+                ep = max(1.6, 2.0/(3-e0))
                 nn = sm.shape[0] + sm.shape[1]
-                #nn = sm.shape[0]
                 nlimit = int(math.ceil(nn**(1/ep)))
                 cutrows = rows[:min(jr,nlimit)]
             else:
@@ -652,9 +527,8 @@ class HoloScopeOpt:
                     break
             self.avgexponents.append(math.log(jr, self.nU))
             if self.nU > 1e6:
-                en = math.log(self.graph.sum(), self.nU)
-                e0 = 1.6 # math.sqrt(3) # make sure 3/e0 < 2
-                ep = max(e0, en) # claim ep < 2
+                e0=self.e0
+                ep = max(1.6, 2.0/(3-e0))
                 nn = self.nU + self.nV
                 nlimit = int(math.ceil(nn**(1.0/ep)))
                 cutrows = rows[:min(jr,nlimit)]
@@ -676,12 +550,12 @@ class HoloScopeOpt:
         self.CV = np.array(self.CV)
         return
 
-    def qfunc(self, ratios, fbs=None, scale='pl'):
+    def qfunc(self, ratios, fbs=None, scale='exp'):
         if self.aggmethod == 'rank':
             'do not use qfun if it is rank aggregation'
             return ratios
+
         if self.suspbd <= 0.0:
-            #lessbdidx = ratios <= 0.0
             greatbdidx = ratios > 0.0
         else:
             greatbdidx = ratios >= self.suspbd
@@ -695,71 +569,10 @@ class HoloScopeOpt:
             ratios[greatbdidx] = ratios[greatbdidx]**self.b
         elif scale == 'lin':
             ratios[greatbdidx] = np.fmax(self.b*(ratios[greatbdidx]-1)+1, 0)
-        elif scale == 'const':
-            ratios[greatbdidx] = 1.0
-        elif scale == 'log' and fbs is not None:
-            'tf-idf like weight, only works for Ptype.freq'
-            ratios[greatbdidx] = 1/np.log(self.windegrees[greatbdidx] -
-                                        fbs[greatbdidx]+math.e)
-        elif scale == 'logratio' and fbs is not None:
-            'only works for Ptype.freq'
-            ratios[greatbdidx] = np.log(self.windegrees[greatbdidx]+1)/\
-                    np.log(fbs[greatbdidx]+1)
-        elif scale == 'arcsin':
-            ratios[greatbdidx] = 2*np.arcsin(ratios[greatbdidx])/(math.pi)
         else:
             print 'unrecognized scale: ' + scale
             sys.exit(1)
         return ratios
-
-    'P(B|A) for all b \in B, no need of f_A(v)/|A|'
-    #@profile
-    def sProdsuspicious(self, sfbs, suspusers, ptype=[Ptype.freq],
-                        scale='exp'):
-        suspusers=np.array(suspusers)
-        multibsusps={}
-        if Ptype.freq in ptype:
-            sbs = sfbs.multiply(self.sindegreciprocal)
-            bs = sbs.toarray()[0]
-            multibsusps[Ptype.freq] = bs
-            assert(np.all(bs<=1+1e-6))
-            if scale == 'log' or scale == 'logratio':
-                'log, logratio only works for freq'
-                multibsusps[Ptype.freq] =\
-                        self.qfunc(bs, fbs = sfbs.toarray()[0], scale=scale)
-                scale='pl'
-                self.b, self.suspbd = 1, 0.0
-        if Ptype.ts in ptype:
-            bs = self.evalsusp4ts(suspusers, multiburstbd=self.mbd)
-            multibsusps[Ptype.ts] = bs
-            assert(np.all(bs<=1+1e-6))
-        if Ptype.rate in ptype:
-            bs = self.evalsusp4rate(suspusers)
-            multibsusps[Ptype.rate] = bs
-        bsusps = self.aggregationMultiProp(multibsusps, self.aggmethod)
-        #sbsusps = csc_matrix(bsusps)
-        bsusps = self.qfunc(bsusps, fbs = sfbs.toarray()[0], scale=scale)
-        sbsusps = csc_matrix(bsusps, dtype=np.float64)
-        #sbsusps.eliminate_zeros()
-        return sbsusps
-
-    'no use, this has a problem to keep high indegree sink'
-    def sProdsuspicious_no(self, sfbs, sizeA, scale='exp'):
-        sbsusps = sfbs.multiply(self.sindegreciprocal)
-        sbsusps.data = self.qfunc(sbsusps.data, fbs = sfb.toarray()[0], scale=scale)
-        sbsusps.eliminate_zeros()
-        sbsusps=sbsusps.multiply(sfbs/float(sizeA))
-        return sbsusps
-
-    'effective: no need for f_A(v)/|A|'
-    def sMaxobjfunc(self, sizeA, sfbs, sbsusps):
-        de = sizeA + sbsusps.sum()
-        if de==0 and sizeA==0:
-            return 0
-        nsfbs=sfbs.toarray()[0]
-        nu = sbsusps.dot(nsfbs)[0]
-        obj = nu/np.float64( de + self.coe * sizeA )
-        return obj
 
     def setdeltapimsusp(self, z, ysuspusers, add):
         if Ptype.ts in self.ptype:
@@ -787,58 +600,7 @@ class HoloScopeOpt:
         return
 
     #@profile
-    def greedyInflating(self, Q, ptype):
-        'greedy inflating the ordered candidates'
-        lenQ = len(Q)
-        if lenQ == 0:
-            return
-        self.sA = set()
-        self.sfbs = csr_matrix((1, self.nV), dtype=np.int64)
-        self.initpimsuspects([], ptype=ptype)
-        itr = 0
-        for r in Q:
-            sfbsdelta = self.graphr[r]
-            syfbs = self.sfbs + sfbsdelta
-            suspusers = list(self.sA)
-            suspusers.append(r)
-            self.setdeltapimsusp(r, suspusers, add=True)
-            sybsusp = self.sProdsuspicious(syfbs,
-                                           suspusers=suspusers,
-                                           scale=self.scale, ptype=ptype)
-            vy = self.sMaxobjfunc(len(suspusers), syfbs, sybsusp)
-            'update current x with y'
-            self.sA.add(r)
-            self.sfbs = syfbs
-            self.vx = vy
-            self.vxs.append(self.vx)
-
-            ''''stop once vx decrease'
-            if self.bestvx > self.vx:
-                break
-            '''
-
-            if self.bestvx < self.vx or (self.bestvx == self.vx and
-            len(self.bestA)<len(self.sA) ):
-                #copy a set of sA, since it will be added next iteration
-                self.bestA = set(self.sA)
-                self.bestvx = self.vx
-                self.bestfbs = self.sfbs
-                self.bestbsusps = sybsusp
-
-            if itr % (lenQ/10 + 1) == 0:
-                sys.stdout.write('.')
-                sys.stdout.flush()
-            itr+=1
-        print ''
-        return
-
-    def greedysuddendrop(self, sbd=1):
-        '''greedy algo for sudden drop messages
-           sort users according to the invlovment of weighted sudden drop
-        '''
-
-    #@profile
-    def fastgreedy(self, inflating=False, shaving=True):
+    def fastgreedy(self):
         'adding and deleting greed algorithm'
         'No Need: user order for r with obj fuct'
         self.fastlocalbest = []
@@ -846,50 +608,29 @@ class HoloScopeOpt:
         self.fastbestA, self.fastbestfbs, self.fastbestbsusps = \
                 np.zeros(self.nU), np.zeros(self.nV), np.zeros(self.nV)
         for k in xrange(self.numSing):
+            print 'process {}-th singular vector'.format(k+1)
             lenCU = len(self.CU[k])
             if lenCU == 0:
                 continue
-            print 'process {}-th singular vector, size: {}'.format(
-                k+1, lenCU)
-
-            if inflating:
-                print '-- inflating ...'
-                self.greedyInflating(self.CU[k], ptype=self.ptype)
-                print '-- current opt size: {}'.format(len(self.bestA))
-                print '-- current opt value: {}'.format(self.bestvx)
-                A = np.zeros(self.nU, dtype=int)
-                A[list(self.bestA)] = 1
-                self.bestA = A
-                self.bestfbs = self.bestfbs.toarray()[0]
-                self.bestbsusps = self.bestbsusps.toarray()[0]
-                if self.fastbestvx < self.bestvx:
-                    self.fastbestvx = self.bestvx
-                    self.fastbestA = self.bestA
-                    self.fastbestfbs = self.bestfbs
-                    self.fastbestbsusps = self.bestbsusps
-            if shaving:
-                print '*** *** shaving ...'
-                A0 = np.zeros(self.nU, dtype=int)
-                if inflating:
-                    A0[list(self.bestA)] = 1 #shaving from current best
-                else:
-                    A0[self.CU[k]]=1 #shaving from sub singluar space
-                self.start(A0, ptype=self.ptype)
-                self.greedyshaving(sampleB=False)
-                print '*** *** shaving opt size: {}'.format(sum(self.bestA))
-                print '*** *** shaving opt value: {}'.format(self.bestvx)
-                if self.fastbestvx < self.bestvx:
-                    self.fastbestvx = self.bestvx
-                    self.fastbestA = np.array(self.bestA)
-                    self.fastbestfbs = np.array(self.bestfbs)
-                    self.fastbestbsusps = np.array(self.bestbsusps)
-                    print '=== === improved opt size: {}'.format(sum(self.fastbestA))
-                    print '=== === improved opt value: {}'.format(self.fastbestvx)
+            print '*** *** shaving ...'
+            A0 = np.zeros(self.nU, dtype=int)
+            A0[self.CU[k]]=1 #shaving from sub singluar space
+            self.start(A0, ptype=self.ptype)
+            self.greedyshaving()
+            print '*** *** shaving opt size: {}'.format(sum(self.bestA))
+            print '*** *** shaving opt value: {}'.format(self.bestvx)
+            if self.fastbestvx < self.bestvx:
+                self.fastbestvx = self.bestvx
+                self.fastbestA = np.array(self.bestA)
+                self.fastbestfbs = np.array(self.bestfbs)
+                self.fastbestbsusps = np.array(self.bestbsusps)
+                print '=== === improved opt size: {}'.format(sum(self.fastbestA))
+                print '=== === improved opt value: {}'.format(self.fastbestvx)
 
             brankscores = np.multiply(self.bestbsusps, self.bestfbs)
             A = self.bestA.nonzero()[0]
             self.fastlocalbest.append((self.bestvx, (A, brankscores)))
-            'clear inflating or shaving best'
+            'clear shaving best'
             self.bestvx = 0
 
         self.bestvx, self.bestA, self.bestfbs, self.bestbsusps = \
@@ -897,101 +638,8 @@ class HoloScopeOpt:
                     self.fastbestfbs, self.fastbestbsusps
         return
 
-    def kcoreshavingGreedy(self, ptype):
-        'kcore degeneracy'
-        import networkx as nx
-        import networkx.algorithms.bipartite.matrix as nxbim
-        from networkx.algorithms import bipartite
-        self.nxg = nxbim.from_biadjacency_matrix(self.graph,
-              create_using=nx.DiGraph(), edge_attribute='frequency')
-        self.kcoredecomp = nx.core_number(self.nxg)
-        degeneracy = max(self.kcoredecomp.values())
-        #m, n = self.graph.shape
-        rows, cols = bipartite.sets(self.nxg)
-        m,n = len(rows), len(cols)
-        self.corenumrows = np.zeros(m,dtype=int)
-        self.corenumcols = np.zeros(n,dtype=int)
-        for k, v in self.kcoredecomp.iteritems():
-            if self.nxg.node[k]['bipartite'] == 0:
-                self.corenumrows[k]=v
-            else:
-                self.corenumcols[k-m]=v
-        self.kshellshave(ptype=ptype)
-        #self.coreAdmp(ptype=ptype)
-        return
-
-    def coreAdmp(self, ptype):
-        'Deviation from MIRROR PATTERN (dmp)'
-        coreorder = np.argsort(self.corenumrows)[::-1]
-        corerank = coreorder.argsort()+1
-        outdegorder = np.argsort(self.woutdegrees)[::-1]
-        outdegrank =  outdegorder.argsort()+1
-        dmp = np.absolute( np.log2(outdegrank) - np.log2(corerank) )
-        dmpbd = 0# math.log(1.1,2)
-        A0=np.zeros(self.nU, dtype=int)
-        A0[dmp>dmpbd]=1
-        print '*** *** current size: {}'.format(sum(A0))
-        self.qchop=False
-        self.start(A0, ptype)
-        self.greedyshaving(sampleB=False)
-        return
-
-    'shave the top-20 largest shell'
-    def kshellshave(self, ptype):
-        kshellcnt=np.bincount(self.corenumrows)
-        topargkshellcnt = np.argsort(-kshellcnt)[0:20]
-        kshecands = np.sort(topargkshellcnt)[::-1]
-        #gradcorenrows = self.corenumrows
-        self.kcorebestvx = 0
-        maxstay = 20
-        stay = 0
-        for k in kshecands: #xrange(degeneracy, kcoremin, -1):
-            A0idx = np.argwhere(self.corenumrows==k).flatten()
-            if len(A0idx) == 0:
-                continue
-            print '*** *** processing {}-th shell, size: {} ...'.format(k,
-                                                                        len(A0idx))
-            #print '*** *** processing {} core, size: {} ...'.format(k,
-            #                                                            len(A0idx))
-            A0=np.zeros(self.nU, dtype=int)
-            A0[A0idx]=1
-            self.qchop=False
-            self.start(A0, ptype=ptype)
-            self.greedyshaving(sampleB=False)
-            print ''
-            print '*** *** current opt size: {}'.format(sum(self.bestA))
-            print '*** *** current opt value: {}'.format(self.bestvx)
-            if self.kcorebestvx < self.bestvx:
-                self.kcorebestvx = self.bestvx #have improvement
-                self.kcorebestA  = np.array(self.bestA)
-                self.kcorebestfbs = np.array(self.bestfbs)
-                self.kcorebestbsusps = np.array(self.bestbsusps)
-                print '=== === improved opt size: {}'.format(
-                    sum(self.kcorebestA))
-                print '=== === improved opt value: {}'.format(
-                    self.kcorebestvx)
-            """
-            elif self.kcorebestvx > self.bestvx:
-                print '''*** *** stop greedy since obj decreses from {} to
-                    {}'''.format(self.kcorebestvx, self.bestvx)
-                break #stop loop when vx decressing
-            else:
-                stay += 1
-                if stay>=maxstay:
-                    print '*** *** stop since stay too long'
-                    break
-            """
-            'clear shaving best'
-            #self.bestvx, self.bestA[0:] = 0, 0
-            self.bestvx = 0
-
-        self.bestvx, self.bestA, self.bestfbs, self.bestbsusps = \
-                self.kcorebestvx, self.kcorebestA, \
-                self.kcorebestfbs, self.kcorebestbsusps
-
-        return
-
     def drawObjectiveCurve(self, outfig):
+        import matplotlib.pyplot as plt
         fig = plt.figure()
         plt.plot(self.vxs, '-')
         plt.title('The convergence curve of simulated anealing.')
@@ -1001,63 +649,72 @@ class HoloScopeOpt:
             fig.savefig(outfig)
         return fig
 
-    def drawAccRejcnts(self, outfig):
-        fig = plt.figure()
-        plt.plot(self.acccnt, )
-        plt.plot(self.acccnt, 'k--', label='accept times')
-        plt.plot(-1 * np.array(self.rejcnt), 'k:', label='Data length')
-        legend = plt.legend(loc='upper center', shadow=True, fontsize='x-large')
-        # Put a nicer background color on the legend.
-        legend.get_frame().set_facecolor('#00FFCC')
-        if outfig is not None:
-            fig.savefig(outfig)
-        return fig
-
-def paramGridBruteforce(sigmas, coes):
-    pg=[]
-    for s in sigmas:
-        for c in coes:
-            pg.append((s,c))
-    return pg
-
-def evalTriDense(opt):
-    A1=np.append(np.ones(1000,dtype=int), np.zeros(2000,dtype=int))
-    A2=np.append(np.zeros(1000,dtype=int), np.ones(1000,dtype=int))
-    A2=np.append(A2,np.zeros(1000,dtype=int))
-    A3=np.append(np.zeros(2000,dtype=int), np.ones(1000,dtype=int))
-    fbs1=opt.graphr[A1.nonzero()].sum(0).getA1()
-    fbs2=opt.graphr[A2.nonzero()].sum(0).getA1()
-    fbs3=opt.graphr[A3.nonzero()].sum(0).getA1()
-    o1=opt.maxobjfunc(A1, fbs1)
-    o2=opt.maxobjfunc(A2, fbs2)
-    o3=opt.maxobjfunc(A3, fbs3)
-    o=opt.maxobjfunc(np.ones(3000,dtype=int), opt.indegrees)
-    bo = opt.maxobjfunc(opt.bestA, opt.bestfbs)
-    print 'o1: {}'.format(o1)
-    print 'o2: {}'.format(o2)
-    print 'o3: {}'.format(o3)
-    print 'o all: {}'.format(o)
-    print 'best o: {}'.format(bo)
-    return o1,o2,o3,o,bo
-
-def HoloScope(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
-                  sdrop=True, mbd=0.5, tsfile=None, tunit='s',
-                  ratefile=None, fileidstartzero=True,
-                  numSing=10, rbd='avg', shaving=True, inflating=False,
-                  nblock=1):
+def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
+              tunit='s', numSing=10, nblock=1):
+    '''
+    The interface of HoloScope algorithm for external use
+    Parameters
+    ----------
+    wmat: str or sparse matrix
+        If it is str, wmat is the input file name. We load the file into sparse
+        matrix. If it is sparse matrix, we just use wmat.
+    alg: str
+        which algorithm you are going to use. You can choose 'greedy' for
+        synthetic data (#rows+#cols<10000); or 'fastgreedy' for any size of data
+        sets.
+    ptype: list
+        contains which attributes the algorithm is going to use. The hololisc
+        use of all siginals is [Ptype.freq, Ptype.ts, Ptype.rate]
+    qfun: str
+        which kind of qfun the algorithm uses, choosing from 'exp' for
+        exponential (recommended), 'pl' for power-law, 'lin' for linear
+    b: float
+        The base of exponetial qfun, or the exponent of power-law qfun, or
+        absolute slope of linear qfun
+    ratefile: str or None
+        The file name with path for user-object rating sequences. The file
+        format is that each line looks like 'userid-objectid:#star1 #star2 ...\n'
+    tsfile: str or None
+        The file name with path for user-object timestamp sequences. The file
+        format is that each line looks like 'userid-objectid:t1 t2 ...\n'
+    tunit: str (only support 's' or 'd') or None
+        The time unit of input time
+        e.g. in amazon and yelp data, the time is date, i.e. tunit='d'.
+             We use # of days (integer) from the earlest date as input
+    numSing: int
+        The number of first left singular vectors used in our algorithm
+    nblock: int
+        The number of block we need from the algorithm
+    Return
+    ---------
+    (gsrows, gbscores), gbestvx, opt
+        Block (gsrows, gbscores) has the best objective values 'gbestvx' of
+        suspicious object among nblock blocks.
+        gsrows: list
+            is the list of suspicious rows.
+        gbscores: list
+            is the suspicoius scores for every objects. The index is object id,
+            and value is the score.
+        gbestvx: float
+            the best objective value of the nblock blocks.
+        opt: class instance
+            the class instance which contains all the nblock blocks.
+            opt.nbests: list
+                This is the list contains nblock solutions in the form of
+                tuples, (opt.bestvx, (srows, bscores))
+    '''
     print 'initial...'
     if sci.sparse.issparse(wmat) is False and os.path.isfile(wmat):
-        sm = loadedge2sm(wmat, csr_matrix, weighted=True,
-                         idstartzero=fileidstartzero)
+        sm = loadedge2sm(wmat, csr_matrix, weighted=True, idstartzero=True)
     else:
         sm = wmat.tocsr()
     inprop = 'Considering '
     if Ptype.freq in ptype:
-        inprop += '+[involvement] '
+        inprop += '+[topology] '
     if Ptype.ts in ptype:
         assert(os.path.isfile(tsfile))
-        inprop += '+[time stamps] '
-    elif sdrop:
+        inprop += '+[timestamps] '
+    elif tsfile is not None: #consider sdrop by default
         inprop += '+[sudden drop]'
     else:
         tsfile=None
@@ -1068,10 +725,7 @@ def HoloScope(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
         ratefile = None
     print inprop
 
-    opt = HoloScopeOpt(sm, qfun=qfun, b=b, suspbd=epsilon,
-                           aggmethod = aggmethod, sdrop=sdrop,mbd=mbd,
-                           tsfile=tsfile, tunit=tunit, ratefile=ratefile,
-                           fileidstartzero=fileidstartzero)
+    opt = HoloScopeOpt(sm, qfun=qfun, b=b, tsfile=tsfile, tunit=tunit, ratefile=ratefile)
     opt.nbests=[]
     opt.nlocalbests=[] #mainly used for fastgreedy
     gsrows,gbscores,gbestvx = 0,0,0
@@ -1086,19 +740,15 @@ def HoloScope(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
             print 'initial start'
             opt.start(A, ptype=ptype)
             print 'greedy shaving algorithm ...'
-            opt.greedyshaving(sampleB=False)
+            opt.greedyshaving()
         elif alg == 'fastgreedy':
-            print """alg: {}\n\t+ # of singlular vectors: {}\n\
-            + truncated bd: {}\n\t+ Shaving:{} + inflating:{}\n"""\
-                    .format(alg, numSing, rbd, shaving, inflating)
+            print """alg: {}\n\t+ # of singlular vectors: {}\n""".format(alg, numSing)
             print 'initial start'
-            opt.initfastgreedy(ptype, numSing, rbd)
+            opt.initfastgreedy(ptype, numSing)
             print "::::Finish Init @ ", time.clock() - start_time
             print 'fast greedy algorithm ...'
-            opt.fastgreedy(inflating=inflating, shaving=shaving)
-        elif alg == 'kcoregreedy':
-            print 'alg: {}\n'.format(alg)
-            opt.kcoreshavingGreedy(ptype=ptype)
+            opt.fastgreedy()
+            opt.nlocalbests.append(opt.fastlocalbest)
         else:
             print 'No such algorithm: '+alg
             sys.exit(1)
@@ -1107,177 +757,13 @@ def HoloScope(wmat, alg, ptype, qfun, b, epsilon, aggmethod,
 
         srows = opt.bestA.nonzero()[0]
         bscores = np.multiply(opt.bestfbs, opt.bestbsusps)
-        #Brank = (-bscores).argsort()
         opt.nbests.append((opt.bestvx, (srows, bscores)))
-        opt.nlocalbests.append(opt.fastlocalbest)
         gsrows, gbscores, gbestvx = (srows,bscores,opt.bestvx) \
                 if gbestvx < opt.bestvx  else (gsrows, gbscores, gbestvx)
         if k < nblock-1:
             opt.removecurrentblock(srows)
-        print 'global best size ', len(gsrows)
-        print 'global best value ', gbestvx
-    return (gsrows, gbscores), gbestvx, opt
 
-if __name__=="__main__":
-    print 'argv ', sys.argv
-    if len(sys.argv)>1:
-        testid = int(sys.argv[1])
-    else:
-        testid = 0
-    datapath=home+'/Data/'
-    testdatapath='./testdata/'
-    respath='./testout/'
-
-    print 'loading data ... ...'
-    #test1
-    #edgefnm= testdatapath+'bigraph.test'
-    #umtsfnm = testdatapath+'usermsgts.test'
-    #fileidstartzero = False
-    if testid == 1:
-        #test2
-        './testdata/test_appuprate.dict'
-        edgefnm= testdatapath+'test_userbeer.edgelist'#'test_appup.edgelist'
-        umtsfnm = testdatapath+'test_userbeerts.dict'#'test_appupts.dict'
-        tunit='s'
-        umratefnm = testdatapath+'test_userbeerrate.dict' #'test_appuprate.dict'
-        fileidstartzero = True
-        sm = loadedge2sm(edgefnm, csr_matrix, weighted=True,
-                         idstartzero=fileidstartzero)
-        sm = sm.tocsr()
-        suspbd = 0.0
-        numSing = 10
-        rbd = 'avg'
-        qfuns=['exp']
-        bs=[32]
-        ptype=[Ptype.freq, Ptype.ts, Ptype.rate]
-        sdrop=True
-        nblock=2
-
-    if testid == 0:
-        '''
-        M = genTriDenseBlock(1000, 1000, 1000, 500, 1000,1000, p1=0.8, alpha2=3,
-                             alpha3=9.0)
-        sm=csr_matrix(M)
-        '''
-        #A1,B1,A2,B2=500,500, 1500, 1500 #100,100,1500,1500 #
-        #m = genDiDenseBlock(A1,B1,A2, B2, alpha=-1)
-        #m=addnosie(m, A1+A2, B1, 0.005, black=True, A0=A1, B0=0)
-        #m=addnosie(m, A1, B1+B2, 0.005, black=True, A0=0, B0=B1)
-        #m=addnosie(m, A1+A2, B1+B2, 0.4, black=False)
-
-        #m = genTriRectBlocks(3000,3000,0.6,0.6,0.6)
-        #m = genDiHyperRectBlocks(50, 50, 2500, 2500, alpha=-0.5, tau=0.02)
-        #m=addnosie(m, 2550, 50, 0.005, black=True, A0=50, B0=0)
-        #m=addnosie(m, 50, 2550, 0.005, black=True, A0=0, B0=50)
-        #m=addnosie(m, 2550, 2550, 0.005, black=True, A0=0, B0=0)
-        A1,B1,A2,B2= 500,500, 2500, 2500 #100,100, 2500, 2500
-        m = genDiHyperRectBlocks(A1, B1, A2, B2, alpha=-0.5, tau=0.002)
-        m = addnosie(m, A1+A2, B1+B2, 0.01, black=True, A0=0, B0=0)
-        m = addnosie(m, A1+A2, B1+B2, 0.4, black=False, A0=0, B0=0)
-        #m[0:500][:,500:3000]=m[500:1000][:,500:3000] #camouflage
-        #m = addnosie(m, 500, 3000, 0.99, black=False, A0=0, B0=500)
-        sm = coo_matrix(m)
-        sm = injectCliqueCamo(sm, 500, 500, p=0.6, testIdx=3)
-        numSing = 10
-        suspbd=0.0
-        rbd = 'avg'
-        qfuns=['exp']
-        bs=[128]#[128]
-        ptype=[Ptype.freq]
-        sdrop=False
-        umtsfnm, umratefnm, tunit, fileidstartzero = None, None, True, 's'
-        nblock =2
-
-    if testid == 3:
-        edgefnm = datapath+'wbdata/usermsg.edgelist'
-        umtsfnm = None
-        umratefnm = None
-        fileidstartzero=False
-        sm = loadedge2sm(edgefnm, csc_matrix, weighted=True, idstartzero=fileidstartzero)
-        sm = sm.tocsr()
-        suspbd = 0.0
-        numSing = 2
-        qfuns=['exp']
-        bs=[128]
-        rbd = 4e-1
-        ptype=[Ptype.freq]
-
-    if testid == 4:
-        edgefnm= datapath+'BeerAdvocate/userbeer.edgelist'
-        umtsfnm = datapath+'BeerAdvocate/userbeerts.dict'
-        umratefnm = datapath+'BeerAdvocate/userbeerrate.dict'
-        fileidstartzero = True
-        sm = loadedge2sm(edgefnm, csr_matrix, weighted=True,
-                         idstartzero=fileidstartzero)
-        sm = sm.tocsr()
-        suspbd = 0.0
-        numSing = 2
-        rbd = 1e-4
-        qfuns=['exp']
-        bs=[128]
-        ptype=[Ptype.freq, Ptype.rate, Ptype.ts]
-        sdrop = True
-        tunit='s'
-        nblock=3
-
-    '''
-    [0,1e1, 5e1, 1e2, 5e2, 800.0,1000]
-    [1e1, 5e1, 1e2, 2e2, 4e2, 6e2, 8e2, 1e3]
-    np.array([1e1, 5e1, 1e2, 2e2])
-    [0, 1e1, 5e1, 1e2, 2e2, 4e2 ]
-    [0, 1e2, 2e2]
-    '''
-    #coes = [0] #[1, 1e1, 5e1, 1e2]#np.array([1e1, 5e1, 1e2])
-    #paragrid=paramGridBruteforce(sigmas, coes)
-    paragrid=paramGridBruteforce(qfuns, bs)
-    figs =OrderedDict({})
-    vxss =OrderedDict({})
-    algs = ['greedy', 'fastgreedy', 'kcoregreedy']
-    alg=algs[1]
-    for qfun, b in  paragrid:
-        bdres = HoloScope(sm, alg, ptype, qfun, b, epsilon=suspbd,
-                             aggmethod='joint', sdrop=sdrop,
-                             tsfile=umtsfnm, tunit=tunit, ratefile=umratefnm,
-                             fileidstartzero=fileidstartzero,
-                             numSing=numSing, rbd=rbd, shaving=True,
-                              inflating = False, nblock=nblock)
-        opt = bdres[-1]
-        T='alg{}q{}_b{}'.format(alg, opt.scale, opt.b)
-        vxss[T]=opt.vxs
-        figs[T] = opt.drawObjectiveCurve(respath+'curve'+T+'.eps')
-        print '\n\toptimized A size: {}'.format(len(bdres[0][0]))
-        print '\toptimized objec: {}'.format(bdres[1])
-
-        continue #skip the following
-
-        if alg == 'greedy':
-            print """--processing qfun:{}, b:{}, suspbd:{}""".format(opt.scale, opt.b, opt.suspbd)
-            A = np.ones(opt.nU,dtype=int)
-            print 'initial start'
-            opt.start(A, ptype=ptype)
-            #opt.simulateAnealing()
-            print 'greedy algorithm ...'
-            opt.greedyshaving(sampleB=False)
-        elif alg == 'fastgreedy':
-            print """--processing qfun:{}, b: {}, suspbd: {},
-                roundbd: {}""".format(opt.scale, opt.b, opt.suspbd, rbd)
-            print 'initial start'
-            opt.initfastgreedy(ptype, numSing, rbd)
-            print 'fast greedy algorithm ...'
-            opt.fastgreedy(shaving=True)
-        elif alg == 'kcoregreedy':
-            opt.kcoreshavingGreedy(ptype=ptype)
-
-        T='alg{}q{}_b{}'.format(alg, opt.scale, opt.b)
-        vxss[T]=opt.vxs
-        figs[T] = opt.drawObjectiveCurve(
-            respath+'curvealg{}_b{}.eps'.format(alg, opt.scale, opt.b))
-        '''
-        fig = opt.drawObjectiveCurve(respath+'convergecurve.png')
-        #fig.show()
-        fig2 = opt.drawAccRejcnts(respath+'acceptrejectcnts}.png')
-        #fig2.show()
-        '''
-        print '\n\toptimized A size: {}'.format(np.sum(opt.bestA))
-        print '\toptimized objec: {}'.format(opt.bestvx)
+    print 'global best size ', len(gsrows)
+    print 'global best value ', gbestvx
+    return (gbestvx, (gsrows, gbscores)), opt
 

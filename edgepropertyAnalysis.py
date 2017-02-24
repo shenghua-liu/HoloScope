@@ -1,22 +1,9 @@
 import sys
-sys.path.append('../')
 import numpy as np
 import scipy as sci
-#import networkx as nx
-#import scipy.sparse.linalg as slin
-from collections import OrderedDict
-from scipy.sparse import coo_matrix, csc_matrix, csr_matrix, lil_matrix
-from mytools.ioutil import loadedge2sm, saveSimpleListData, loadSimpleList
-from mytools.drawutil import drawHexbin, drawTimeseries
-import matplotlib.pyplot as plt
+from scipy.sparse import coo_matrix, csc_matrix
 from gendenseblock import *
-from os.path import expanduser
 import math
-from userdeltat import usermsgtsdic
-from scipy import stats
-from sklearn import preprocessing
-import datetime
-home = expanduser("~")
 
 class MultiEedgePropBiGraph:
     def __init__(self, wadjm):
@@ -24,9 +11,6 @@ class MultiEedgePropBiGraph:
         self.nU , self.nV = wadjm.shape
         self.indegrees = self.wadjm.sum(0).getA1()
         self.inbd=2 # the objects that has at least 2 edges are considered
-        'self.spv = {} #suspect users property vale '
-        'self.apv = {} #property values for all sinks'
-        'self.eprop =[] # the edge property list of PIM'
         """
         since the data is cut by the end of time, so we need to leave a twait
         to see if it is a sudden drop or cut by the end of time
@@ -34,10 +18,10 @@ class MultiEedgePropBiGraph:
         self.twaits = {'s':12*3600, 'h':24, 'd':30, None:0}
 
     #@profile
-    def load_from_edgeproperty(self, profnm, idstartzero, mtype=coo_matrix,
+    def load_from_edgeproperty(self, profnm, mtype=coo_matrix,
                                dtype=int):
         'load the graph edge property, time stamps, ratings, or text vector'
-        self.idstartzero = idstartzero #record for output recovery
+        self.idstartzero = True #record for output recovery
         offset = -1 if idstartzero is False else 0
         'sparse matrix has special meaning of 0, so property index start from 1'
         self.eprop = [np.array([])] #make the idx start from 1 in sparse matrix
@@ -63,25 +47,6 @@ class MultiEedgePropBiGraph:
             self.edgeidxmlt = self.edgeidxm.transpose().tolil()
             self.eprop = np.array(self.eprop)
         return
-
-    def ratebins(self, propvals, btype):
-        if not( max(propvals) == 5 and min(propvals)>=1 ):
-            print 'Warning: preprocess to let rating between [1 5]'
-            btype = 'org' #use original values as hist
-        'bins: [v1, v2), [v2, v3), ..., [v_{n-1}, v_n]'
-        bins=[]
-        if btype == 'orig':
-            bins=np.concatenate([propvals, [max(propvals)+1]])
-        elif btype == 'int':
-            s = math.floor(min(propvals))
-            e = math.ceil(max(propvals)) + 1
-            bins=np.arange(s,e).astype(int)
-        elif btype == 'polar':
-            '''for 1 to 5 score space, 1,1.5,2; 2.5,3,3.5; 4,4.5,5'''
-            bins=[1,2.5,4,5.5]
-        else:
-            print '[Error] no ratebins type'
-        return bins
 
     #@profile
     def setup_rate4all_sinks(self):
@@ -146,7 +111,6 @@ class MultiEedgePropBiGraph:
             amean[i] = aumts.mean()
             avar[i] = aumts.var()
             'awaking bursting points and values, debugpt for debug'
-            #abpts, bv = self.awakeburstpoints(aumts, bins=bins)
             abpts, bvs, slops, debugpt = awakburstpoints_recur(aumts, bins=bins)
             awakburstpt[i], burstvals[i], burstslops[i] =abpts, bvs, slops
             cnts=[]
@@ -158,7 +122,6 @@ class MultiEedgePropBiGraph:
             ainbursts[i]=np.array(cnts)
             dropfall, dropt, slop = \
                 burstmaxdying_recur(aumts, endt=self.endt, twait=self.twait, bins=bins)
-                #burstdyingpoints(aumts, endt=self.endt, twait=self.twait, bins=bins)
             dyingpt[i] = dropt
             dropslops[i], dropfalls[i] = slop, dropfall
 
@@ -170,18 +133,14 @@ class MultiEedgePropBiGraph:
                 dyingpt, dropslops, dropfalls
         return
 
-    def load_from_userobjrates(self, uoratefn, idstartzero,
-                               mtype=csc_matrix, dtype=float):
+    def load_from_userobjrates(self, uoratefn, mtype=csc_matrix, dtype=float):
         'if inject load and setup need to be called separately'
-        self.load_from_edgeproperty(uoratefn, idstartzero,
-                                   mtype, dtype)
+        self.load_from_edgeproperty(uoratefn, mtype, dtype)
         self.setup_rate4all_sinks()
         return
 
-    def load_from_usermsgtimes(self, umtsfn, tunit, idstartzero,
-                               mtype=csc_matrix, dtype=int):
-        self.load_from_edgeproperty(umtsfn, idstartzero=idstartzero,
-                                   mtype=mtype, dtype=int)
+    def load_from_usermsgtimes(self, umtsfn, tunit, mtype=csc_matrix, dtype=int):
+        self.load_from_edgeproperty(umtsfn, mtype=mtype, dtype=int)
         self.setup_ts4all_sinks(tunit=tunit)
         return
 
@@ -241,74 +200,6 @@ class MultiEedgePropBiGraph:
         self.deltacols, self.delcols = deltacols, delcols
         return
 
-    def setupsuspects_opt1(self, users):
-        'todo: incremental, need to change sumidx2cols structure'
-        self.suspuser = np.array(users)
-        suspmlt = self.edgeidxmr[self.suspuser].transpose().tolil() #susp matrix
-        spv = {}
-        col=-1
-        for spids in suspmlt.data:
-            col+=1
-            #property indices of suspect sink
-            if len(spids)>self.inbd:
-                #only consider those objects have more than inbd edges with suspusers
-                sumts = np.concatenate(self.eprop[spids])
-                spv[col]=sumts
-        self.spv = spv
-        return
-
-    def awakeburstpoints(self, ts, bins='auto'):
-        '''
-            Calculates the awaking and bursting points of a time series
-            There may be multiple pair of awaking and bursting points,
-            considering the multiple bursting cases.
-            bins: is the same as numpy.histogram
-        '''
-        abpts=[]
-        bvals=[]#record the bursting point value
-        abptidxs=[]
-        hts = np.histogram(ts, bins=bins)
-        ys = np.append([0], hts[0]) #add zero, so 0 is allocated to lowest left bound
-        ys = ys.astype(np.float64)
-        xs = hts[1]
-        import Queue
-        maxidxs = Queue.Queue()
-        maxidxs.put(np.argmax(ys))#initial#np.argwhere(ys==max(ys)).flatten()
-        startidx = 0 #start idx of the line
-        while not maxidxs.empty():
-            maxidx = maxidxs.get()
-            x0,y0,xm,ym=xs[startidx], ys[startidx], xs[maxidx], ys[maxidx]
-            sqco = math.sqrt((ym-y0)**2 + (xm-x0)**2) #sqrt of coefficient
-            '''
-            dta = 0
-            ta=t0dix #waking pt at the beginning
-            for i in xrange(startidx, maxidx):
-                x,y = xs[i],ys[i]
-                dt = ((ym-y0)*x - (xm-x0)*y - ym*x0 + xm*y0)/sqco
-            '''
-            xvec, yvec=xs[startidx:maxidx], ys[startidx:maxidx]
-            'if pt (x,y) at the above of the line, the distance is negative'
-            dts = ((ym-y0)*xvec - (xm-x0)*yvec + (xm*y0 - ym*x0))/sqco
-            xaidx = np.argmax(dts) + startidx #recover to global idx
-            xa = xs[max(xaidx-1, 0)] #since we add 0 to ys, find the left bound
-            abpts.append((xa, xm)) #save results
-            bvals.append(ys[maxidx])
-            abptidxs.append((xaidx, maxidx))
-            'locate the next bursting and starting earlier than awaking'
-            diffyincrese = np.argwhere(np.diff(ys[maxidx:]) >0)
-            if len(diffyincrese) > 0:
-                turningptidx = diffyincrese[0,0]+maxidx
-                ntmaxidx = np.argmax(ys[turningptidx:]) + turningptidx #global idx
-                '''using the minimum point between turning pt and next max pt
-                   warning: this may skip a burst peak between turningpt and
-                   local minimum pt
-                '''
-                startidx = np.argmin(ys[turningptidx:ntmaxidx]) + turningptidx
-                maxidxs.put(ntmaxidx)
-            else:
-                break
-        return np.array(abpts), np.array(bvals)
-
     #@profile
     def suspratedivergence(self, neutral=False, delta=False):
         '''calculate the diverse of ratings betwee A and U\A
@@ -325,13 +216,12 @@ class MultiEedgePropBiGraph:
             ratediv =np.zeros(self.nV, dtype=float)
             self.maxratediv = 0
 
-        #bal = np.zeros(self.nV) 
         for col in cols:
             if col in delcols:
                 assert(col not in self.spv)
                 ratediv[col] = 0
                 continue
-            rs = self.spv[col] #stophere
+            rs = self.spv[col]
             shis=np.bincount(rs, minlength=3)
             ahis = self.ahists[col]
             ohis=ahis-shis
@@ -340,63 +230,17 @@ class MultiEedgePropBiGraph:
                 'remove netrual 2.5, 3, 3.5'
                 shis[1], ohis[1] = 0, 0
             #cal KL-divergence
+            from scipy import stats
             kl = stats.entropy(shis, ohis)
             lenrs = len(rs)
             lenars = len(self.apv[col])
             ssum, osum = float(lenrs)+1, float(lenars-lenrs)+1
-            #bal[col]=(min(ssum/osum, osum/ssum))
             bal = (min(ssum/osum, osum/ssum))
-            ratediv[col]=kl*bal #optimal tune density:0.1 ==> 0.91 F-measure
+            ratediv[col]=kl*bal
             self.maxratediv = kl if self.maxratediv < kl else self.maxratediv
-        #if scaling:
-        #    ratediv = preprocessing.minmax_scale(ratediv, copy=False)
-        #self.ratediv = np.multiply(bal, ratediv)
+
         self.ratediv = ratediv
         return self.ratediv
-
-    'concrete center distance'
-    def suspuserccdist(self):
-        ccdist=[]
-        mccdist=[] #average, mean
-        smean, svar = [],[] #all mean/var
-        for col, sumts in self.spv.iteritems():
-            smean.append(sumts.mean())
-            svar.append(sumts.var())
-            cc = self.amean[col] #concrete center
-            ccd = 0
-            for ts in sumts:
-                ccd += abs(ts-cc)
-            ccdist.append(ccd)
-            mccdist.append(ccd/float(len(sumts)))
-
-        self.ccdist, self.mccdist = \
-                np.array(ccdist), np.array(mccdist)
-        self.smean, self.svar = \
-                np.array(smean), np.array(svar)
-        return
-
-    def setupsuspmsg(self, msg):
-        if msg is not None:
-            self.suspmsg = np.array(msg)
-        else:
-            'heuristically choose suspect msg'
-            suspinvolv = self.wadjm[self.suspuser].sum(0).getA1()
-            suspmsgbd=50
-            self.suspmsg = np.argwhere(suspinvolv>=suspmsgbd).flatten()
-        return
-
-    'for testing'
-    def run_tsccdistscore_eval(self, msg):
-        suspwm = self.wadjm[self.suspuser].tocsc()
-        colsum = suspwm.sum(0).getA1()
-        cols = self.spv.keys() #effective cols for current susp users
-        self.involvratios = np.divide(colsum[cols], self.indegrees[cols])
-        self.involvcnts = colsum[cols]
-        self.setupsuspmsg(msg, idstartzero)
-        self.suspuserccdist()
-        #record the idx in mx/y vx/y that belongs to suspect msgs
-        self.suspmsgidx =np.in1d(cols, self.suspmsg).nonzero()[0]
-        return
 
     #@profile
     def suspburstinvolv(self, multiburstbd=0.5, weighted=True, delta=False):
@@ -424,8 +268,6 @@ class MultiEedgePropBiGraph:
             abpts, slops, bvs, ainburst = abpts[burstids], slops[burstids],\
                     bvs[burstids], ainburst[burstids]
             scnt, wscnt, wallcnt =0, 0, 0
-            #for (left, right), sp, acnt in \
-            #             zip(abpts[burstids], slops[burstids], ainburst[burstids]):
             for i in xrange(len(abpts)):
                 (left, right), sp, bv, acnt = abpts[i],slops[i], bvs[i], ainburst[i]
                 '#susp users in burst'
@@ -445,170 +287,6 @@ class MultiEedgePropBiGraph:
         self.inburstcnt = inburstcnt
         self.inburstratio =inburstratio
         return self.inburstcnt, self.inburstratio
-
-    def suspburstinvolv_self(self, multiburstbd=0.5, weighted=True):
-        '''calc how many points allocated in awake and burst period, over total
-           number of A
-        '''
-        inburstcnt=[]
-        inburstratio=[]
-        maxslop = 0.0
-        for col, st in self.spv.iteritems():
-            abpts, bvs, slops = self.awakeburstpt[col], \
-                    self.burstvals[col], self.burstslops[col]
-            'get the satisfied multiburst points'
-            burstids = bvs/float(bvs[0]) >=  multiburstbd
-            incnt, wincnt =0, 0
-            for (left, right), sp in zip(abpts[burstids], slops[burstids]):
-                cnt = np.multiply(st >= left, st <= right).sum()
-                incnt += cnt
-                wincnt += cnt * sp
-                maxslop = max(sp, maxslop)
-            inburstcnt.append(incnt)
-            if weighted is not False:
-                inburstratio.append(wincnt/float(len(st)))
-            else:
-                inburstratio.append(incnt/float(len(st)))
-
-        if weighted is True or weighted == 'max':
-            inburstratio = np.array(inburstratio, dtype=float)/maxslop #normalized by max slop
-        elif weighted == 'minmax':
-            inburstratio = preprocessing.minmax_scale(inburstratio, copy=False)
-        self.inburstcnt = np.array(inburstcnt, dtype=float)
-        self.inburstratio =inburstratio
-
-        return self.inburstcnt, self.inburstratio
-
-    def showInvolvCCdist(self, outfignm=None, involvcnt=True,
-                         meandist=True, gridsize=100):
-        '''
-            The heatmap of suspect involving ratios (may times involve cnt)
-            vs edge time distance from concrete center as paper said
-        '''
-        involv = np.multiply(self.involvratios, self.involvcnts) if involvcnt \
-                else self.involvratios
-
-        ccdist= self.mccdist if meandist else self.ccdist
-        suspmsgidx = self.suspmsgidx  #record the idx in mx/y vx/y that belongs to suspect msgs
-        fig = drawHexbin(involv,ccdist, outfig=None, xscale='log', yscale='log',
-                          colorscale=True, suptitle='cc distance vs suspect involvment',
-                          gridsize=gridsize)
-        plt.loglog(involv[suspmsgidx], ccdist[suspmsgidx], 'ks', markersize=10,
-                   markerfacecolor='none', markeredgecolor='k')
-        if involvcnt:
-            plt.xlabel('involvlement of suspect users')
-        else:
-            plt.xlabel('involving ratios of suspect users')
-        plt.ylabel('distance to concrete center')
-        if outfignm is not None:
-            fig.savefig(outfignm)
-        return fig, [involv, ccdist]
-
-    def showsuspMeanVar(self, allmsg=True, outfigmean=None,
-                        outfigvar=None, gridsize=100):
-        suspm = self.edgeidxmr[self.suspuser].tocsc() #susp matrix
-        allm = self.edgeidxmc #all susp msg matrix
-        if allmsg is False:
-            suspm = suspm[:,self.suspmsg]
-            allm = self.edgeidxmc[:,self.suspmsg]
-        mx,my, vx, vy=[],[],[],[]
-        if self.inbd < 2:
-            print 'warning: the bound of involving by suspect users must >= 2'
-            vxyscale = 'linear'
-        else:
-            vxyscale = 'log'
-        suspwm = self.wadjm[self.suspuser].tocsc()
-        colsum = suspwm.sum(0).getA1()
-        cols = np.argwhere(colsum>=self.inbd).flatten() #suspsuers involved in the msgs
-        suspmsgidx, idx = [], 0 #record the idx in mx/y vx/y that belongs to suspect msgs
-        for i in cols:
-            xidx = suspm[:,i].data
-            yidx = allm[:,i].data
-            xdata = np.concatenate(self.eprop[xidx])
-            ydata = np.concatenate(self.eprop[yidx])
-            mx.append(xdata.mean())
-            my.append(ydata.mean())
-            vx.append(xdata.var())
-            vy.append(ydata.var())
-            if i in self.suspmsg:
-                suspmsgidx.append(idx)
-            idx += 1
-        mx, my, vx, vy = np.array(mx), np.array(my),np.array(vx),np.array(vy)
-        fig1 = drawHexbin(mx,my, outfig=None, xscale='log', yscale='log',
-                          colorscale=True, suptitle='suspect msg means',
-                          gridsize=gridsize)
-        if allmsg:
-            plt.loglog(mx[suspmsgidx], my[suspmsgidx], 'ks', markersize=10,
-                       markerfacecolor='none', markeredgecolor='k')
-        plt.xlabel('suspect users')
-        plt.ylabel('all users')
-        if outfigmean is not None:
-            fig1.savefig(outfigmean)
-
-        vxg0=vx>0
-        fig2 = drawHexbin(vx[vxg0],vy[vxg0], outfig=None, xscale=vxyscale, yscale=vxyscale,
-                          colorscale=True, suptitle='suspect msg variences',
-                         gridsize=gridsize)
-        if allmsg:
-            suspvxg0 = vx[suspmsgidx]>0
-            plt.loglog(vx[suspmsgidx][suspvxg0], vy[suspmsgidx][suspvxg0], 'ks', markersize=10,
-                       markerfacecolor='none', markeredgecolor='k')
-        plt.xlabel('suspect users')
-        plt.ylabel('all users')
-        if outfigvar is not None:
-            fig2.savefig(outfigvar)
-
-        '''
-        fig = plt.figure(1)
-        plt.subplot(121)
-        plt.scatter(mx, my, marker='.')
-        plt.xlabel('suspect users')
-        plt.ylabel('all users')
-        plt.title('suspect msgs means')
-        plt.subplot(122)
-        plt.scatter(vx, vy, marker='.')
-        plt.xlabel('suspect users')
-        plt.ylabel('all users')
-        plt.title('suspect msgs variance')
-        '''
-        return [fig1, fig2],[mx,my,vx,vy, cols[vx==0]]
-
-    def showslopvsindegrees(self, sloptype='burst', weighted=True, showsuspmsg=True,
-                                 outfnm=None):
-        cols = self.indegrees>=self.inbd
-        indegrees = self.indegrees[cols]
-        slops, ws, wslops, suspmsglocalids = [],[],[],[]
-        if sloptype == 'burst':
-            pstr = 'max bursting'
-            for s in self.burstslops.values():
-                slops.append(s[0])
-            slops = np.array(slops)
-            for val in self.burstvals.values():
-                ws.append(val[0])
-            ws = np.array(ws)
-        elif sloptype == 'drop':
-            pstr = 'dropping'
-            slops = self.dropslops[cols]
-            ws = self.dropfalls[cols]
-        if showsuspmsg:
-            msgbinary  = np.zeros(self.nV)
-            msgbinary[self.suspmsg]=1
-            suspmsglocalids = msgbinary[cols].nonzero()[0]
-        if weighted:
-            wslops = np.multiply(ws, slops)
-            fig = showgeneralheatmap(indegrees, wslops, suspmsglocalids)
-            plt.ylabel('weighted {} slop'.format(pstr))
-            plt.title('Weighted {} slops v.s. indegrees of messages'.format(pstr))
-        else:
-            fig = showgeneralheatmap(indegrees, slops, suspmsglocalids)
-            plt.ylabel('{} slop'.format(pstr))
-            plt.title('{} slops v.s. indegrees of messages'.format(pstr))
-        plt.xlabel('indegree')
-        if outfnm is not None:
-            fig.savefig(outfnm)
-        gwslops = np.zeros(self.nV)
-        gwslops[cols] = wslops
-        return fig, (cols.nonzero()[0], suspmsglocalids, gwslops)
 
 #@profile
 def awakburstpoints_recur(ts, bins='auto'):
@@ -642,7 +320,6 @@ def sort_extendLeftbd(abptidxs, xs, ys):
     for l, r in abptsrt:
         slop = (ys[r]-ys[l])/float(xs[r]-xs[l])
         slops.append(slop)
-        #diffs.append(ys[r]-ys[l])
     slops = np.array(slops)
     #diffs = np.array(slops)
     'extend left, if overlep keep that of higher burst val'
@@ -678,62 +355,7 @@ def recurFindAwakePt(xs, ys, start=0, abptidxs=[]):
         recurFindAwakePt(xs[turningptidx:], ys[turningptidx:],
                          start = turningptidx + start,
                          abptidxs=abptidxs)
-    ''' #opt2
-    l = len(ys)-maxidx
-    if l >= 3:
-        for idx in xrange(1,l-1):
-            if ys[maxidx+idx] < ys[maxidx+idx+1]:
-                'current turning pt starts from maxid'
-                turningptidx = idx+maxidx
-                #ntmaxidx = np.argmax(ys[turningptidx:]) + turningptidx #global idx
-                #'using the minimum point between turning pt and next max pt'
-                #startidx = np.argmin(ys[turningptidx:ntmaxidx]) + turningptidx
-                recurFindAwakePt(xs[turningptidx:], ys[turningptidx:],
-                                 start = turningptidx + start,
-                                 abptidxs=abptidxs)
-                break
-    '''
     return
-
-#@profile
-def burstdyingpoints(ts, endt, twait=12*3600, bins='auto'):
-    'endt is used to judge if the dying is caused by observation window'
-    hts = np.histogram(ts, bins=bins)
-    xs = hts[1]
-    ys = hts[0].astype(np.float64)
-    lenys = len(ys)
-    if  lenys < 2:
-        return 0, xs[0], 0
-    maxts = max(ts)
-    if maxts < endt - twait:
-        ys = np.concatenate((ys, [0.0]))
-    else:
-        #hadd = stats.mode(ys)[0][0]
-        hadd = (ys[-1]+ys[-2])/2.0
-        ys = np.concatenate((ys, [hadd]))
-    lenys += 1
-    #xs = np.append(xs, 2*xs[-1]-xs[-2])#move one time bins
-    #burstidx = np.argwhere(ys==max(ys))[0,-1] #this is slow the last maximum
-    burstidx = lenys - np.argmax(ys[::-1]) -1 #the last max occurrence
-    #burstidx = np.argmax(ys)
-    if burstidx == lenys-1: #bursting at the end
-        dyingidx = lenys-1
-        slop = (ys[burstidx] - 0)/float(xs[-1]-xs[-2])
-        fall = ys[burstidx]
-    else:
-        xm, ym, xe, ye = xs[burstidx], ys[burstidx], xs[-1], ys[-1]
-        sqco = math.sqrt((ym-ye)**2 + (xm-xe)**2) #sqrt of coefficient
-        xvec, yvec = xs[burstidx+1:], ys[burstidx+1:]
-        dts = -((ym-ye)*xvec - (xm-xe)*yvec + (xm*ye - ym*xe))/sqco
-        dts = np.absolute(dts) #use abs value
-        dyingidx = len(dts)-np.argmax(dts[::-1])-1 + burstidx+1
-        slop = (ym - ys[dyingidx])/float(xs[dyingidx] - xm)#dyingidx alwasy >0
-        if dyingidx == lenys -1:
-            fall = ym # assume continue to fall to 0, keeping current slop
-        else:
-            #fall = ym-ys[dyingidx]
-            fall = ym - ys[-1] #approximation of dying fall
-    return fall, xs[dyingidx], slop #, (burstidx,dyingidx)
 
 def burstmaxdying_recur(ts, endt, twait=12*3600, bins='auto'):
     'endt is used to judge if the dying is caused by observation window'
@@ -746,7 +368,6 @@ def burstmaxdying_recur(ts, endt, twait=12*3600, bins='auto'):
     if maxts < endt - twait:
         ys = np.concatenate((ys, [0.0]))
     else:
-        #hadd = stats.mode(ys)[0][0]
         hadd = (ys[-1]+ys[-2])/2.0
         ys = np.concatenate((ys, [hadd]))
 
@@ -758,12 +379,9 @@ def recurFindMaxFallDying(xs, ys, maxdying):
     lenys = len(ys)
     if lenys < 2:
         return
-    #xs = np.append(xs, 2*xs[-1]-xs[-2])#move one time bins
-    #burstidx = np.argwhere(ys==max(ys))[0,-1] #this is slow the last maximum
     burstidx = lenys - np.argmax(ys[::-1]) -1 #the last max occurrence
     if ys[burstidx]-min(ys) < maxdying[0]:
         return
-    #burstidx = np.argmax(ys)
     if burstidx == lenys-1: #bursting at the end
         dyingidx = lenys-1
         slop = (ys[burstidx] - 0)/float(xs[-1]-xs[-2])
@@ -839,7 +457,7 @@ def pim2tensorformat(tsfile, ratefile, tensorfile, tunit='s', tbins='h'):
     return
 
 def tspim2tensorformat(tsfile, tensorfile, tunit='s', tbins='h',
-                       idstartzero=False):
+                       idstartzero=True):
     offset = 0 if idstartzero else -1
     propdict = {}
     with open(tsfile, 'rb') as fts, open(tensorfile, 'wb') as fte:
@@ -870,116 +488,4 @@ def tspim2tensorformat(tsfile, tensorfile, tunit='s', tbins='h',
         fts.close()
         fte.close()
     return
-
-def showgeneralheatmap(xs, ys, idx, outfignm=None, gridsize=100, xscale='log',
-                      yscale='log'):
-    fig = drawHexbin(xs, ys, outfig=None, xscale=xscale, yscale=yscale,
-                      colorscale=True, suptitle='general heatmap for discovery',
-                      gridsize=gridsize)
-    if xscale == 'log' and yscale == 'log':
-        plt.loglog(xs[idx], ys[idx], 'ks', markersize=10,
-                   markerfacecolor='none', markeredgecolor='k')
-    elif xscale == 'linear' and yscale == 'linear':
-        plt.plot(xs[idx], ys[idx], 'ks', markersize=10,
-                   markerfacecolor='none', markeredgecolor='k')
-    plt.xlabel('general x')
-    plt.ylabel('general y')
-    if outfignm is not None:
-        fig.savefig(outfignm)
-    return fig
-
-if __name__=="__main__":
-    datapath=home+'/Data/'
-
-    indata = datapath+'wbdata/usermsg.edgelist'
-    usermsgts = datapath+'wbdata/usermsgtsdict.dat'
-    tunit='s'
-    idstartzero = False
-    respath = datapath+'wbdata/results/'
-    #case fraudar
-    suspuserfn = datapath+'wbdata/fraudardenseblocklog0.rows' #'wbdata/fraudardenseblockeven0.rows'
-    suspmsgfn = datapath+ 'wbdata/fraudardenseblocklog0.cols' #'wbdata/fraudardenseblockeven0.cols'
-    suspidstartzero = True
-    '''
-    datapath=datapath+'BeerAdvocate/'
-    indata = datapath+'userbeer.edgelist.inject0'
-    usermsgts = datapath+'userbeerts.dict.inject0'
-    idstartzero=True
-    respath=datapath+'results/'
-    suspuserfn = datapath + 'userbeer.edgelist.trueA0'
-    suspmsgfn = datapath + 'userbeer.edgelist.trueB0'
-    suspidstartzero = True
-    ''' 
-
-    '''#case short horizontal bar with name patterns
-    suspuserfn = datapath+'wbdata/suspicious_users.useridx'
-    suspmsgfn = None #datapath+'wbdata/'
-    suspidstartzero = False #False #suspicious_users.useridx start from 1
-    '''
-
-
-    '''#case CR, cost-gain
-    suspuserfn = datapath+'wbdata/involratiofastgreedy.rows'
-    #involratiofastgreedy.cols
-    suspmsgfn = datapath+'wbdata/involvfastgreedyge100.cols'
-    suspidstartzero = True
-    '''
-
-    '''#test cases
-    testdatapath='./testdata/'
-    indata = './testdata/bigraph.test'
-    usermsgts = './testdata/usermsgts.test'
-    suspuserfn = './testdata/suspuser.test'
-    suspmsgfn = './testdata/suspmsg.test'
-    respath='./testout/'
-    suspidstartzero = False
-    '''
-
-    print 'load weighted ajacent matrix'
-    wsm = loadedge2sm(indata, csr_matrix, issquared=False, weighted=True,
-                      dtype=int, idstartzero=idstartzero)
-    '''#preprocess
-    procdata = datapath+'wbdata/wb201311proc.dat'
-    numusers= 2748001
-    umdic=usermsgtsdic(procdata, numusers, usermsgts, delthreshold=0)
-    '''
-    #mg = nx.from_scipy_sparse_matrix(ssm,
-    #                           create_using=nx.MultiDiGraph(),edge_attribute='freq')
-    print 'create and load multi edge property bipartite graph ... ...'
-    mpg = MultiEedgePropBiGraph(wadjm = wsm)
-    mpg.load_from_usermsgtimes(usermsgts, tunit=tunit, idstartzero=idstartzero)
-    startts = 1383192000 #2013-10-31 UTC-4
-    #print 'it is ' + datetime.datetime.fromtimestamp(tmin).strftime('%Y-%m-%d %H:%M:%S')
-
-    print 'load suspect users and msgs ... ...'
-    suspuser = loadSimpleList(suspuserfn, dtype=int)
-    suspuser = np.array(suspuser)
-    suspuser = suspuser if suspidstartzero else suspuser-1
-    if suspmsgfn is not None:
-        suspmsg = loadSimpleList(suspmsgfn, dtype=int)
-        suspmsg = np.array(suspmsg)
-        suspmsg = suspmsg if suspidstartzero else suspmsg-1
-    else:
-        suspmsg = None
-    'result from fraudar, cr, fastgreedy, the id starts from zero'
-    mpg.setupsuspects(suspuser)
-    mpg.setupsuspmsg(suspmsg)
-    #mpg.run_tsccdistscore_eval(suspmsg)
-    '''
-    print 'showing suspect mean and variance ... ...'
-    figs,points = mpg.showsuspMeanVar(allmsg=True,
-                        outfigmean = respath+'suspect_mean_heatmap.png',
-                        outfigvar = respath+'suspect_var_heatmap.png')
-    figs[0].show()
-    figs[1].show()
-    '''
-    '''
-    print 'showing suspect involvement & distance to center'
-    fig, points = mpg.showInvolvCCdist( outfignm=respath+'suspect_involv_ccdist_heatmap.png',
-                                    involvcnt=True, gridsize=100, meandist=True)
-    fig.show()
-    '''
-    print 'showing bursting slops'
-    fig, res = mpg.showslopvsindegrees(sloptype='burst', weighted=True, showsuspmsg=False,
-                     outfnm=respath+sloptype+'slopsvsindegree.eps')
 
