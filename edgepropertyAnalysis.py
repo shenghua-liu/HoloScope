@@ -22,7 +22,7 @@ class MultiEedgePropBiGraph:
                                dtype=int):
         'load the graph edge property, time stamps, ratings, or text vector'
         self.idstartzero = True #record for output recovery
-        offset = -1 if idstartzero is False else 0
+        offset = -1 if self.idstartzero is False else 0
         'sparse matrix has special meaning of 0, so property index start from 1'
         self.eprop = [np.array([])] #make the idx start from 1 in sparse matrix
         with open(profnm, 'rb') as fin:
