@@ -19,9 +19,9 @@ python run_holoscope.py #default run demo 0 which is synthetic data
 python run_holoscope.py 1 1 #run demo 1 which is yelp data with injected labels, and return block 1
 ```
 
-Usage:
+API Usage:
 ------
-Interface for invoking
+Interface of holoscopeFraudDect.py
 ```python
 def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
               tunit='s', numSing=10, nblock=1):
