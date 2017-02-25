@@ -2,14 +2,14 @@ HoloScope
 ======
 **HoloScope**: Topology-and-Spike Aware Fraud Detection
 
-***HoloScope*** is developped for fraud detection on graph, which makes make *holistic*
+**HoloScope** is developped for fraud detection on graph, which makes make *holistic*
 	use of several signals, namely connectivity (i.e., topology), temporal bursts and drops,
 	and rating deviation in a systematic way.
 
 Abstract:
 ------
 
-As online fraudsters invest more resources, including purchasing large pools of fake user accounts and dedicated IPs, fraudulent attacks become less obvious and their detection becomes increasingly challenging. Existing approaches such as average degree maximization suffer from the bias of including more nodes than necessary, resulting in lower accuracy and increased need for manual verification. Hence, we propose HoloScope, which uses information from graph topology and temporal spikes to more accurately detect groups of fraudulent users. In terms of graph topology, we introduce ``contrast suspiciousness,'' a dynamic weighting approach, which allows us to more accurately detect fraudulent blocks, particularly low-density blocks. In terms of temporal spikes, HoloScope takes into account the sudden bursts and drops of fraudsters' attacking patterns. In addition, we provide theoretical bounds for how much this increases the time cost needed for fraudsters to conduct adversarial attacks. Additionally, from the perspective of ratings, HoloScope incorporates the deviation of rating scores in order to catch fraudsters more accurately. Moreover, HoloScope has a concise framework and sub-quadratic time complexity, making the algorithm reproducible and scalable. Extensive experiments showed that HoloScope achieved significant accuracy improvements on synthetic and real data, compared with state-of-the-art fraud detection methods. 
+As online fraudsters invest more resources, including purchasing large pools of fake user accounts and dedicated IPs, fraudulent attacks become less obvious and their detection becomes increasingly challenging. Existing approaches such as average degree maximization suffer from the bias of including more nodes than necessary, resulting in lower accuracy and increased need for manual verification. Hence, we propose HoloScope, which uses information from graph topology and temporal spikes to more accurately detect groups of fraudulent users. In terms of graph topology, we introduce *contrast suspiciousness*, a dynamic weighting approach, which allows us to more accurately detect fraudulent blocks, particularly low-density blocks. In terms of temporal spikes, HoloScope takes into account the sudden bursts and drops of fraudsters' attacking patterns. In addition, we provide theoretical bounds for how much this increases the time cost needed for fraudsters to conduct adversarial attacks. Additionally, from the perspective of ratings, HoloScope incorporates the deviation of rating scores in order to catch fraudsters more accurately. Moreover, HoloScope has a concise framework and sub-quadratic time complexity, making the algorithm reproducible and scalable. Extensive experiments showed that HoloScope achieved significant accuracy improvements on synthetic and real data, compared with state-of-the-art fraud detection methods. 
 
 Demo:
 ------
@@ -61,21 +61,22 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
         The number of block we need from the algorithm
     Return
     ---------
-    (gsrows, gbscores), gbestvx, opt
-        Block (gsrows, gbscores) has the best objective values 'gbestvx' of
-        suspicious object among nblock blocks.
+    (gbestvx, (gsrows, gbscores)), opt
+        Block (gsrows, gbscores) has the best objective values 'gbestvx' among 
+	*nblock* blocks.
+	gbestvx: float
+            the best objective value of the *nblock* blocks.
         gsrows: list
             is the list of suspicious rows.
         gbscores: list
             is the suspicoius scores for every objects. The index is object id,
-            and value is the score.
-        gbestvx: float
-            the best objective value of the nblock blocks.
-        opt: class instance
-            the class instance which contains all the nblock blocks.
+            and value is the score. With the scores, you can get the suspicious rank
+	    of the objects.
+        opt: instance of HoloScopeOpt class
+            the class instance which contains all the *nblock* blocks in opt.nbests.
             opt.nbests: list
-                This is the list contains nblock solutions in the form of
-                tuples, (opt.bestvx, (srows, bscores))
+                This is the list contains *nblock* solutions in the form of
+                tuple, i.e., (opt.bestvx, (srows, bscores))
     '''
 ```
 
