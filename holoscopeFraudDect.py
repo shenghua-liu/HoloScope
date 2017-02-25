@@ -687,21 +687,22 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
         The number of block we need from the algorithm
     Return
     ---------
-    (gsrows, gbscores), gbestvx, opt
-        Block (gsrows, gbscores) has the best objective values 'gbestvx' of
-        suspicious object among nblock blocks.
+    (gbestvx, (gsrows, gbscores)), opt
+        Block (gsrows, gbscores) has the best objective values 'gbestvx' among 
+	*nblock* blocks.
+	gbestvx: float
+            the best objective value of the *nblock* blocks.
         gsrows: list
             is the list of suspicious rows.
         gbscores: list
             is the suspicoius scores for every objects. The index is object id,
-            and value is the score.
-        gbestvx: float
-            the best objective value of the nblock blocks.
-        opt: class instance
-            the class instance which contains all the nblock blocks.
+            and value is the score. With the scores, you can get the suspicious rank
+	    of the objects.
+        opt: instance of HoloScopeOpt class
+            the class instance which contains all the *nblock* blocks in opt.nbests.
             opt.nbests: list
-                This is the list contains nblock solutions in the form of
-                tuples, (opt.bestvx, (srows, bscores))
+                This is the list contains *nblock* solutions in the form of
+                tuple, i.e., (opt.bestvx, (srows, bscores))
     '''
     print 'initial...'
     if sci.sparse.issparse(wmat) is False and os.path.isfile(wmat):
