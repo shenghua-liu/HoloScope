@@ -62,9 +62,9 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
     Return
     ---------
     (gbestvx, (gsrows, gbscores)), opt
-        Block (gsrows, gbscores) has the best objective values 'gbestvx' among 
+        Block (gsrows, gbscores) has the best objective values *gbestvx* among 
 	*nblock* blocks.
-	gbestvx: float
+        gbestvx: float
             the best objective value of the *nblock* blocks.
         gsrows: list
             is the list of suspicious rows.
