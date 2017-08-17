@@ -104,7 +104,7 @@ class HoloScopeOpt:
         self.bestbsusps = np.array([])
 
 
-    def weightWithDropslop(self, weighted, scale='log1p'):
+    def weightWithDropslop(self, weighted, scale):
         'weight the adjacency matrix with the sudden drop of ts for each col'
         if weighted:
             colWeights = np.multiply(self.tspim.dropslops, self.tspim.dropfalls)
