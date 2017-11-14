@@ -31,7 +31,8 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
     ----------
     wmat: str or sparse matrix
         If it is str, wmat is the input file name. We load the file into sparse
-        matrix. If it is sparse matrix, we just use wmat.
+        matrix. The format of file is edge list, i.e. 'u1 v1\n' for each line. 
+	If it is sparse matrix, we just use wmat.
     alg: str
         which algorithm you are going to use. You can choose 'greedy' for
         synthetic data (#rows+#cols<10000); or 'fastgreedy' for any size of data
