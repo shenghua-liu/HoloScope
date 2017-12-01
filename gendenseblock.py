@@ -171,7 +171,7 @@ def injectFraud2PropGraph(freqfile, ratefile, tsfile, acnt, bcnt, goal, popbd,
     for i in fraudsters:
         if testIdx == 1:
             thres = p * bcnt / (n - bcnt)
-            for j in targets:
+            for j in camocands:
                 s = np.random.choice(scands, size=1, p=sprobs) if weighted else 1
                 if (not weighted) and M2[i,j] > 0:
                     continue
@@ -181,7 +181,7 @@ def injectFraud2PropGraph(freqfile, ratefile, tsfile, acnt, bcnt, goal, popbd,
                     generateProps(rates, times, k, s, t0, tsdiffcands, tsp)
         if testIdx == 2:
             thres = 2 * p * bcnt / (n - bcnt)
-            for j in targets:
+            for j in camocands:
                 s = np.random.choice(scands, size=1, p=sprobs) if weighted else 1
                 if (not weighted) and M2[i,j] > 0:
                     continue
