@@ -228,7 +228,8 @@ class HoloScopeOpt:
             bs = self.evalsusp4rate(suspusers)
             multibsusps[Ptype.rate] = bs
         bsusps = self.aggregationMultiProp(multibsusps, self.aggmethod)
-        bsusps = self.qfunc(bsusps, fbs=fbs, scale=scale)
+        bsusps = self.qfunc(bsusps, fbs=fbs, scale=scale,
+                numratios=len(multibsusps))
         return bsusps
 
     def initpimsuspects(self, suspusers, ptype):
@@ -550,7 +551,7 @@ class HoloScopeOpt:
         self.CV = np.array(self.CV)
         return
 
-    def qfunc(self, ratios, fbs=None, scale='exp'):
+    def qfunc(self, ratios, fbs=None, scale='exp', numratios=1):
         if self.aggmethod == 'rank':
             'do not use qfun if it is rank aggregation'
             return ratios
@@ -564,7 +565,7 @@ class HoloScopeOpt:
             ratios[lessbdidx] = 0.0
         'picewise q funciton if >= suspbd, i.e. epsilon'
         if scale == 'exp':
-            ratios[greatbdidx] = self.expbase**(ratios[greatbdidx]-1)
+            ratios[greatbdidx] = self.expbase**(ratios[greatbdidx]-numratios)
         elif scale == 'pl':
             ratios[greatbdidx] = ratios[greatbdidx]**self.b
         elif scale == 'lin':

@@ -152,8 +152,11 @@ def injectFraud2PropGraph(freqfile, ratefile, tsfile, acnt, bcnt, goal, popbd,
     fraudsters = random.sample(fraudcands, acnt)
     'rating times for one user to one product, multiedge'
     scands = np.arange(1,smax+1,dtype=int)
-    sprobs = 1.0/scands
-    sprobs = sprobs/sprobs.sum()
+    sprobs = []
+    numedges = (M>0).sum()
+    for s in scands:
+        nums = (M==s).sum()
+        sprobs.append(float(nums)/numedges)
 
     # inject near clique
     for j in targets:

@@ -119,7 +119,8 @@ if __name__=="__main__":
         qfun, b = 'exp', 32
     else:
         print 'no demo {}'.format(demoid)
-        print 'try demo id 1 or 2'
+        print 'try demo id 0 (default) or 1'
+        sys.exit()
 
     M = M.asfptype()
     bdres = HoloScope(M, alg, ptype, qfun=qfun, b=b,
