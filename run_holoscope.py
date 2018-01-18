@@ -83,22 +83,44 @@ def loadpreprocess(rootnm, path):
 
     return infreqfile, intsfile, inratefile, ftA, ftB
 
+def checkfilegz(name):
+    if os.path.isfile(name):
+        return name
+    elif os.path.isfile(name+'.gz'):
+        return name+'.gz'
+    else:
+        return None
+
 
 if __name__=="__main__":
-    print 'argv ', sys.argv
-    if len(sys.argv)>1:
-        demoid = int(sys.argv[1])
-    else:
-        demoid = 0
-    'number of block to find'
-    if len(sys.argv)>2:
-        K=int(sys.argv[2])
-    else:
-        K=1
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-r", "--run",
+            help="choose which way to run (default:0). \
+            0 and 1 are demo run; 2 run for user's input case",
+            choices=[0,1,2], type=int, default=0)
+    parser.add_argument('-K', '--nblock',
+            help="choose number of blocks to detect (default:1).",
+            type=int, default=1)
+    parser.add_argument('-p', '--outpath',
+            help="choose number of blocks to detect (default:./testout/).",
+            default='./testout/')
+    parser.add_argument('path', nargs='?', default='./testdata/',
+            help="the path of input data")
+    parser.add_argument('rootnm', nargs='?', default='',
+            help='''the root name of input files, including *.edgelist,
+                    *ts.dict for time series, *rate.dict for rating.
+                    e.g. yelp.edgelist[.gz], yelpts.dict[.gz],
+                    yelprate.dict[.gz]''')
+    parser.add_argument('-t', action='store_true',
+            help='consider time series. Need *ts.dict[.gz] file')
+    parser.add_argument('-s', action='store_true',
+            help='consider rating scores. Need *rate.dict[.gz] file')
+    args = parser.parse_args()
 
-    blnm = 'HS'
-    respath = './testout/'
-    if demoid == 0:
+    respath =  args.outpath
+    K = args.nblock
+    if args.run == 0:
         print 'demo on sythetic data with hyperbolic block'
         rootnm='hycomm'
         ratefile, tsfile, tunit = None, None, None
@@ -119,23 +141,42 @@ if __name__=="__main__":
         alg = 'fastgreedy'#'greedy' #
         ptype=[Ptype.freq]
         qfun, b='exp', 128
-    elif demoid == 1:
+    elif args.run == 1:
         print 'demo on real data with injected labels'
         rootnm = 'yelp'
         path = './testdata/'
         freqfile, tsfile, ratefile, ftA, ftB = loadpreprocess(rootnm, path)
-        'tunit is used by HoloScope'
-        tunit = 'd'
         M = loadedge2sm(freqfile, coo_matrix, weighted=True)
         alg = 'fastgreedy'
         ptype  = [Ptype.freq, Ptype.ts, Ptype.rate]
         qfun, b = 'exp', 8 #10 #4 #8 # 32
+        'tunit is used by HoloScope'
+        tunit = 'd'
         print 'load ground truth ... ...'
         trueA = loadSimpleList(ftA, dtype=int)
         trueB = loadSimpleList(ftB, dtype=int)
+    elif args.run == 2:
+        print 'run users data and output into files'
+        rootnm = args.rootnm
+        path = args.path
+        if rootnm == '':
+            print 'please give root name, see help with -h or --help.'
+            sys.exit()
+        ptype=[Ptype.freq]
+        freqfile, tsfile, ratefile = checkfilegz(path+rootnm+'.edgelist'), None, None
+        if args.t:
+            ptype.append(Ptype.ts)
+            tsfile = checkfilegz(path+rootnm+'ts.dict')
+        if args.s:
+            ptype.append(Ptype.rate)
+            ratefile = checkfilegz(path+rootnm+'rate.dict')
+        M = loadedge2sm(freqfile, coo_matrix, weighted=True)
+        alg = 'fastgreedy'
+        qfun, b = 'exp', 8 #10 #4 #8 # 32 
+        tunit = 'd'
     else:
-        print 'no demo {}'.format(demoid)
-        print 'try demo id 0 (default) or 1'
+        #print 'no demo {}'.format(demoid)
+        #print 'try demo id 0 (default) or 1'
         sys.exit()
 
     M = M.asfptype()
@@ -145,13 +186,14 @@ if __name__=="__main__":
     opt = bdres[-1]
     for nb in xrange(K):
         res = opt.nbests[nb]
-        pr = precision_recall_sets(set(trueA), set(res[1][0]))
-        FA = Fmeasure(pr[0],pr[1])
         print 'block{}: \n\tobjective value {}'.format(nb+1, res[0])
-        print '\tA precision:{}, recall:{}, F:{}'\
-                .format(pr[0],pr[1],FA)
-        auc = auc_trueset_rankscore(trueB, res[1][1])
-        print '\tB auc:{}'.format(auc)
+        if args.run < 2:
+            pr = precision_recall_sets(set(trueA), set(res[1][0]))
+            FA = Fmeasure(pr[0],pr[1])
+            print '\tA precision:{}, recall:{}, F:{}'\
+                    .format(pr[0],pr[1],FA)
+            auc = auc_trueset_rankscore(trueB, res[1][1])
+            print '\tB auc:{}'.format(auc)
         T = respath+rootnm+'.blk{}'.format(nb+1)
         saveSimpleListData(res[1][0], T+'.rows')
         saveSimpleListData(res[1][1], T+'.colscores')

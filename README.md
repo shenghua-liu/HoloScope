@@ -16,7 +16,36 @@ Demo:
 ```bash
 python run_holoscope.py #default run demo 0 which is synthetic data
 
-python run_holoscope.py 1 1 #run demo 1 which is yelp data with injected labels, and return block 1
+python run_holoscope.py -r 1 -K 1 #run demo 1 which is yelp data with injected labels, and return block 1
+
+
+python run_holoscope.py --help
+
+usage: run_holoscope.py [-h] [-r {0,1,2}] [-K NBLOCK] [-p OUTPATH] [-t] [-s]
+                        [path] [rootnm]
+
+positional arguments:
+  path                  the path of input data
+  rootnm                the root name of input files, including *.edgelist,
+                        *ts.dict for time series, *rate.dict for rating. e.g.
+                        yelp.edgelist[.gz], yelpts.dict[.gz],
+                        yelprate.dict[.gz]
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -r {0,1,2}, --run {0,1,2}
+                        choose which way to run (default:0). 0 and 1 are demo
+                        run; 2 run for user's input case
+  -K NBLOCK, --nblock NBLOCK
+                        choose number of blocks to detect (default:1).
+  -p OUTPATH, --outpath OUTPATH
+                        choose number of blocks to detect
+                        (default:./testout/).
+  -t                    consider time series. Need *ts.dict[.gz] file
+  -s                    consider rating scores. Need *rate.dict[.gz] file
+
+  example: 
+     python run_holoscope.py ./testdata/ yelp -tsr 2
 ```
 
 API Usage:
