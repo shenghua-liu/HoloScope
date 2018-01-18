@@ -11,16 +11,16 @@ Abstract:
 
 As online fraudsters invest more resources, including purchasing large pools of fake user accounts and dedicated IPs, fraudulent attacks become less obvious and their detection becomes increasingly challenging. Existing approaches such as average degree maximization suffer from the bias of including more nodes than necessary, resulting in lower accuracy and increased need for manual verification. Hence, we propose HoloScope, which uses information from graph topology and temporal spikes to more accurately detect groups of fraudulent users. In terms of graph topology, we introduce *contrast suspiciousness*, a dynamic weighting approach, which allows us to more accurately detect fraudulent blocks, particularly low-density blocks. In terms of temporal spikes, HoloScope takes into account the sudden bursts and drops of fraudsters' attacking patterns. In addition, we provide theoretical bounds for how much this increases the time cost needed for fraudsters to conduct adversarial attacks. Additionally, from the perspective of ratings, HoloScope incorporates the deviation of rating scores in order to catch fraudsters more accurately. Moreover, HoloScope has a concise framework and sub-quadratic time complexity, making the algorithm reproducible and scalable. Extensive experiments showed that HoloScope achieved significant accuracy improvements on synthetic and real data, compared with state-of-the-art fraud detection methods. 
 
-RUN IN COMMAND LINE:
+Run in command line:
 ------
 ```bash
 python run_holoscope.py #default run demo 0 which is synthetic data
 
 python run_holoscope.py -r 1 -K 1 #run demo 1 which is yelp data with injected labels, and return block 1
 
-
 python run_holoscope.py --help
 
+```
 usage: run_holoscope.py [-h] [-r {0,1,2}] [-K NBLOCK] [-p OUTPATH] [-t] [-s]
                         [path] [rootnm]
 
@@ -46,7 +46,6 @@ optional arguments:
 
   example: 
      python run_holoscope.py ./testdata/ yelp -tsr 2
-```
 
 API Usage:
 ------
@@ -118,3 +117,24 @@ The results:
   <img src="images/wbexp.png" width="250"/>
   <img src="images/effeciencyexpelec.png" width="350"/>
 </p>
+
+Cite:
+------
+```latex
+@inproceedings{DBLP:conf/cikm/LiuHF17,
+  author    = {Shenghua Liu and
+               Bryan Hooi and
+               Christos Faloutsos},
+  title     = {HoloScope: Topology-and-Spike Aware Fraud Detection},
+  booktitle = {Proceedings of the 2017 {ACM} on Conference on Information and Knowledge
+               Management, {CIKM} 2017, Singapore, November 06 - 10, 2017},
+  pages     = {1539--1548},
+  year      = {2017},
+  crossref  = {DBLP:conf/cikm/2017},
+  url       = {http://doi.acm.org/10.1145/3132847.3133018},
+  doi       = {10.1145/3132847.3133018},
+  timestamp = {Tue, 07 Nov 2017 16:24:37 +0100},
+  biburl    = {http://dblp.org/rec/bib/conf/cikm/LiuHF17},
+  bibsource = {dblp computer science bibliography, http://dblp.org}
+}
+```
