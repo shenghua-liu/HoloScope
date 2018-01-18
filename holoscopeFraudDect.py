@@ -49,9 +49,9 @@ class HoloScopeOpt:
         self.suspbd = 0.0 #susp < suspbd will assign to zero
         self.priordropslop=sdrop
 
-        self.graph=graphmat
-        self.graphr = graphmat.tocsr()
-        self.graphc = graphmat.tocsc()
+        self.graph=graphmat.tocoo()
+        self.graphr = self.graph.tocsr()
+        self.graphc = self.graph.tocsc()
         self.matricizetenor=None
         self.nU, self.nV=graphmat.shape
         self.indegrees = graphmat.sum(0).getA1()
@@ -131,7 +131,7 @@ class HoloScopeOpt:
         colDiag = lil_matrix((n, n))
         colDiag.setdiag(colWeights)
         self.graphr = self.graphr * colDiag.tocsr()
-        self.graph = self.graphr
+        self.graph = self.graphr.tocoo(copy=False)
         self.graphc = self.graph.tocsc(copy=False)
         print "finished computing weight matrix"
 
@@ -142,7 +142,7 @@ class HoloScopeOpt:
         colDiag = lil_matrix((n, n))
         colDiag.setdiag(colWeights)
         self.graphr = self.graphr * colDiag.tocsr()
-        self.graph = self.graphr
+        self.graph = self.graphr.tocoo(copy=False)
         self.graphc = self.graph.tocsc(copy=False)
         return
 
@@ -589,9 +589,9 @@ class HoloScopeOpt:
         print 'removing {} rows from graph'.format(len(rows))
         lilm = self.graph.tolil()
         lilm[rows,:]=0
-        self.graph=lilm.tocsr()
+        self.graph=lilm.tocoo()
         self.graphc= lilm.tocsc()
-        self.graphr = self.graph
+        self.graphr = self.graph.tocsr()
 
         if self.matricizetenor is not None:
             print 'removing {} rows from tensor'.format(len(rows))
@@ -707,9 +707,9 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
     '''
     print 'initial...'
     if sci.sparse.issparse(wmat) is False and os.path.isfile(wmat):
-        sm = loadedge2sm(wmat, csr_matrix, weighted=True, idstartzero=True)
+        sm = loadedge2sm(wmat, coo_matrix, weighted=True, idstartzero=True)
     else:
-        sm = wmat.tocsr()
+        sm = wmat.tocoo()
     inprop = 'Considering '
     if Ptype.freq in ptype:
         inprop += '+[topology] '

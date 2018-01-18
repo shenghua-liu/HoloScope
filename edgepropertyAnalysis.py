@@ -3,6 +3,7 @@ import numpy as np
 import scipy as sci
 from scipy.sparse import coo_matrix, csc_matrix
 from gendenseblock import *
+from mytools.ioutil import myreadfile
 import math
 
 class MultiEedgePropBiGraph:
@@ -25,7 +26,7 @@ class MultiEedgePropBiGraph:
         offset = -1 if self.idstartzero is False else 0
         'sparse matrix has special meaning of 0, so property index start from 1'
         self.eprop = [np.array([])] #make the idx start from 1 in sparse matrix
-        with open(profnm, 'rb') as fin:
+        with myreadfile(profnm, 'rb') as fin:
             idx=1
             x,y,data=[],[],[]
             for line in fin:
@@ -415,7 +416,7 @@ def pim2tensorformat(tsfile, ratefile, tensorfile, tunit='s', tbins='h'):
     'convert the pim files: tsfile, ratefile into tensor file, i.e. tuples'
     rbins = lambda x: 0 if x<2.5 else 1 if x<=3.5 else 2 #lambda x: x 
     propdict = {}
-    with open(tsfile, 'rb') as fts, open(ratefile, 'rb') as frt,\
+    with myreadfile(tsfile, 'rb') as fts, myreadfile(ratefile, 'rb') as frt,\
             open(tensorfile, 'wb') as fte:
         for line in fts:
             k,v = line.strip().split(':')
@@ -460,7 +461,7 @@ def tspim2tensorformat(tsfile, tensorfile, tunit='s', tbins='h',
                        idstartzero=True):
     offset = 0 if idstartzero else -1
     propdict = {}
-    with open(tsfile, 'rb') as fts, open(tensorfile, 'wb') as fte:
+    with myreadfile(tsfile, 'rb') as fts, myreadfile(tensorfile, 'wb') as fte:
         for line in fts:
             k,v = line.strip().split(':')
             propdict[k]=[v]

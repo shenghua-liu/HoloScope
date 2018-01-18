@@ -49,6 +49,40 @@ def auc_trueset_ranklist(ts, rlist):
     truelabel[list(ts)]=1
     return roc_auc_score(truelabel, rscore)
 
+def loadpreprocess(rootnm, path):
+    freqfile = path+rootnm+'.edgelist'
+    ratefile = path+rootnm+'rate.dict'
+    tsfile = path+rootnm+'ts.dict'
+    if not (os.path.isfile(freqfile+'.gz')):
+        print 'file does not exists'
+        sys.exit(1)
+    if not os.path.isfile(ratefile+'.gz'):
+        ratefile=None
+    if not os.path.isfile(tsfile+'.gz'):
+        tsfile=None
+    'inject unpopular object with indegree at most 100'
+    bcnt, goal, popbd = 200, 200, 100
+    acnt = 2000
+
+    print 'inject: \n\t{}\n\t{}\n\t{}'.format(freqfile, ratefile,
+                                              tsfile)
+    print '\tinject: A:{} B:{} goal:{}'.format(acnt, bcnt, goal)
+    suffix='.{}'.format(acnt)
+    infreqfile, inratefile, intsfile = freqfile+'.inject'+suffix,\
+                                 ratefile+'.inject'+suffix,\
+                                 tsfile+'.inject'+suffix
+    ftA, ftB = freqfile+'.trueA'+suffix, \
+            freqfile+'.trueB'+suffix
+    if os.path.isfile(infreqfile) and \
+        os.path.isfile(intsfile) and \
+        os.path.isfile(inratefile):
+        print 'reading existing injected files... ...'
+    else:
+        M, (trueA, trueB) = injectFraud2PropGraph( freqfile, ratefile, tsfile,
+                acnt, bcnt, goal = goal, popbd=popbd, testIdx = 3, suffix=suffix)
+
+    return infreqfile, intsfile, inratefile, ftA, ftB
+
 
 if __name__=="__main__":
     print 'argv ', sys.argv
@@ -80,6 +114,7 @@ if __name__=="__main__":
             import matplotlib.pyplot as plt
             fig=plt.figure()
             plt.spy(M, marker=',', markersize = 1)
+            plt.savefig(respath+'demo0.png')
             fig.show()
         alg = 'fastgreedy'#'greedy' #
         ptype=[Ptype.freq]
@@ -88,35 +123,16 @@ if __name__=="__main__":
         print 'demo on real data with injected labels'
         rootnm = 'yelp'
         path = './testdata/'
+        freqfile, tsfile, ratefile, ftA, ftB = loadpreprocess(rootnm, path)
         'tunit is used by HoloScope'
         tunit = 'd'
-        freqfile = path+rootnm+'.edgelist'
-        ratefile = path+rootnm+'rate.dict'
-        tsfile = path+rootnm+'ts.dict'
-        if not (os.path.isfile(freqfile+'.gz')):
-            print 'file does not exists'
-            sys.exit(1)
-        if not os.path.isfile(ratefile+'.gz'):
-            ratefile=None
-        if not os.path.isfile(tsfile+'.gz'):
-            tsfile=None
-        'inject unpopular object with indegree at most 100'
-        bcnt, goal, popbd = 200, 200, 100
-        acnt = 2000
-
-        print 'inject: \n\t{}\n\t{}\n\t{}'.format(freqfile, ratefile,
-                                                  tsfile)
-        print '\tinject: A:{} B:{} goal:{}'.format(acnt, bcnt, goal)
-        suffix='.{}'.format(acnt)
-        M, (trueA, trueB) = injectFraud2PropGraph( freqfile, ratefile, tsfile,
-                                                  acnt, bcnt, goal = goal, popbd=popbd,
-                                                  testIdx = 3, suffix=suffix)
-        freqfile, ratefile, tsfile = freqfile+'.inject'+suffix,\
-                                     ratefile+'.inject'+suffix,\
-                                     tsfile+'.inject'+suffix
+        M = loadedge2sm(freqfile, coo_matrix, weighted=True)
         alg = 'fastgreedy'
         ptype  = [Ptype.freq, Ptype.ts, Ptype.rate]
-        qfun, b = 'exp', 32
+        qfun, b = 'exp', 8 #10 #4 #8 # 32
+        print 'load ground truth ... ...'
+        trueA = loadSimpleList(ftA, dtype=int)
+        trueB = loadSimpleList(ftB, dtype=int)
     else:
         print 'no demo {}'.format(demoid)
         print 'try demo id 0 (default) or 1'
@@ -131,12 +147,12 @@ if __name__=="__main__":
         res = opt.nbests[nb]
         pr = precision_recall_sets(set(trueA), set(res[1][0]))
         FA = Fmeasure(pr[0],pr[1])
-        print 'block{}: \n\tobjective value {}'.format(nb, res[0])
+        print 'block{}: \n\tobjective value {}'.format(nb+1, res[0])
         print '\tA precision:{}, recall:{}, F:{}'\
                 .format(pr[0],pr[1],FA)
         auc = auc_trueset_rankscore(trueB, res[1][1])
         print '\tB auc:{}'.format(auc)
-        T = respath+rootnm+'a{}.blk{}'.format(acnt,nb)
+        T = respath+rootnm+'.blk{}'.format(nb+1)
         saveSimpleListData(res[1][0], T+'.rows')
         saveSimpleListData(res[1][1], T+'.colscores')
 #end main
