@@ -20,7 +20,6 @@ python run_holoscope.py -r 1 -K 1 #run demo 1 which is yelp data with injected l
 
 python run_holoscope.py --help
 
-```
 usage: run_holoscope.py [-h] [-r {0,1,2}] [-K NBLOCK] [-p OUTPATH] [-t] [-s]
                         [path] [rootnm]
 
@@ -46,6 +45,8 @@ optional arguments:
 
   example: 
      python run_holoscope.py ./testdata/ yelp -tsr 2
+
+```
 
 API Usage:
 ------
