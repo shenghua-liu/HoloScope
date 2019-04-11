@@ -2,7 +2,7 @@ HoloScope
 ======
 **HoloScope**: Topology-and-Spike Aware Fraud Detection
 
-**HoloScope** is developped for fraud detection on graph, which makes make *holistic*
+**HoloScope** is developped for fraud detection based on graphs, which makes *holistic*
 	use of several signals, namely connectivity (i.e., topology), temporal bursts and drops,
 	and rating deviation in a systematic way.
 
@@ -122,7 +122,7 @@ The results:
 Cite:
 ------
 ```latex
-@inproceedings{DBLP:conf/cikm/LiuHF17,
+@inproceedings{liu2017holoscope,
   author    = {Shenghua Liu and
                Bryan Hooi and
                Christos Faloutsos},
@@ -137,5 +137,12 @@ Cite:
   timestamp = {Tue, 07 Nov 2017 16:24:37 +0100},
   biburl    = {http://dblp.org/rec/bib/conf/cikm/LiuHF17},
   bibsource = {dblp computer science bibliography, http://dblp.org}
+}
+@article{liu2018contrast,
+  title={A Contrast Metric for Fraud Detection in Rich Graphs},
+  author={Liu, Shenghua and Hooi, Bryan and Faloutsos, Christos},
+  journal={IEEE Transactions on Knowledge and Data Engineering},
+  year={2018},
+  publisher={IEEE}
 }
 ```
