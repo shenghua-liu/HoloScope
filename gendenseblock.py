@@ -217,9 +217,12 @@ def injectFraud2PropGraph(freqfile, ratefile, tsfile, acnt, bcnt, goal, popbd,
     if not weighted:
         M2.data[0:] =1
     if output is True:
-        savesm2edgelist(M2.astype(int), freqfile+'.inject'+suffix, idstartzero=idstartzero)
-        saveSimpleListData(fraudsters, freqfile+'.trueA'+suffix)
-        saveSimpleListData(targets, freqfile+'.trueB'+suffix)
+        injfreqfile = freqfile+'.inject'+suffix
+        injtrueA = freqfile+'.trueA'+suffix
+        injtrueB = freqfile+'.trueB'+suffix
+        savesm2edgelist(M2.astype(int), injfreqfile, idstartzero=idstartzero)
+        saveSimpleListData(fraudsters, injtrueA)
+        saveSimpleListData(targets, injtrueB)
     if re:
         return M2, (fraudsters, targets)
     else:

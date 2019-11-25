@@ -71,8 +71,8 @@ def loadpreprocess(rootnm, path):
     infreqfile, inratefile, intsfile = freqfile+'.inject'+suffix,\
                                  ratefile+'.inject'+suffix,\
                                  tsfile+'.inject'+suffix
-    ftA, ftB = freqfile+'.trueA'+suffix, \
-            freqfile+'.trueB'+suffix
+    ftA, ftB = freqfile +'.trueA'+suffix, \
+            freqfile +'.trueB'+suffix
     if os.path.isfile(infreqfile) and \
         os.path.isfile(intsfile) and \
         os.path.isfile(inratefile):
@@ -91,6 +91,13 @@ def checkfilegz(name):
     else:
         return None
 
+def scoreLevelObjects( objscores ):
+    sortscores = sorted(objscores, reverse=True)
+    sortobjs = np.argsort(objscores)[::-1]
+    diffscores = - np.diff(sortscores)
+    levelid = np.argmax(diffscores)
+    levelobjs = sortobjs[ : levelid+1]
+    return levelobjs
 
 if __name__=="__main__":
     import argparse
@@ -148,8 +155,8 @@ if __name__=="__main__":
         freqfile, tsfile, ratefile, ftA, ftB = loadpreprocess(rootnm, path)
         M = loadedge2sm(freqfile, coo_matrix, weighted=True)
         alg = 'fastgreedy'
-        ptype  = [Ptype.freq, Ptype.ts, Ptype.rate]
-        qfun, b = 'exp', 8 #10 #4 #8 # 32
+        ptype  = [Ptype.freq, Ptype.ts, Ptype.rate] #[Ptype.freq] 
+        qfun, b = 'exp', 32 #8 #10 #4 #8 # 32
         'tunit is used by HoloScope'
         tunit = 'd'
         print 'load ground truth ... ...'
@@ -172,7 +179,7 @@ if __name__=="__main__":
             ratefile = checkfilegz(path+rootnm+'rate.dict')
         M = loadedge2sm(freqfile, coo_matrix, weighted=True)
         alg = 'fastgreedy'
-        qfun, b = 'exp', 8 #10 #4 #8 # 32 
+        qfun, b = 'exp', 32 #8 #10 #4 #8 # 32 
         tunit = 'd'
     else:
         #print 'no demo {}'.format(demoid)
@@ -187,6 +194,7 @@ if __name__=="__main__":
     for nb in xrange(K):
         res = opt.nbests[nb]
         print 'block{}: \n\tobjective value {}'.format(nb+1, res[0])
+        levelcols = scoreLevelObjects(res[1][1])
         if args.run < 2:
             pr = precision_recall_sets(set(trueA), set(res[1][0]))
             FA = Fmeasure(pr[0],pr[1])
@@ -194,8 +202,14 @@ if __name__=="__main__":
                     .format(pr[0],pr[1],FA)
             auc = auc_trueset_rankscore(trueB, res[1][1])
             print '\tB auc:{}'.format(auc)
+            prB = precision_recall_sets(set(trueB), set(levelcols))
+            FB = Fmeasure(prB[0], prB[1])
+            print '\tB precision:{}, recall:{}, F:{}'\
+                    .format(prB[0], prB[1], FB)
+
         T = respath+rootnm+'.blk{}'.format(nb+1)
         saveSimpleListData(res[1][0], T+'.rows')
         saveSimpleListData(res[1][1], T+'.colscores')
+        saveSimpleListData(levelcols, T+'.levelcols')
 #end main
 

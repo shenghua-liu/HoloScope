@@ -23,6 +23,8 @@ python run_holoscope.py --help
 usage: run_holoscope.py [-h] [-r {0,1,2}] [-K NBLOCK] [-p OUTPATH] [-t] [-s]
                         [path] [rootnm]
 
+e.g. python run_holoscope.py -r 2 -K 1 -ts ./testdata/ yelp  # require yelp.edgelist[.gz], and require yelpts.dict[.gz], yelprate.dict[.gz] if using -ts
+
 positional arguments:
   path                  the path of input data
   rootnm                the root name of input files, including *.edgelist,

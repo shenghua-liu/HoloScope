@@ -283,6 +283,7 @@ class MultiEedgePropBiGraph:
                     wscnt += cnt1
                     wallcnt += acnt
             inburstcnt[col]=scnt
+            'this is ratio of weighted cnt which in [0,1], not the weighted ratio of cnt'
             inburstratio[col] = wscnt/float(wallcnt)
 
         self.inburstcnt = inburstcnt

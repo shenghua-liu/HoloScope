@@ -527,7 +527,7 @@ class HoloScopeOpt:
                 if ui[r] <= rbdrow:
                     break
             self.avgexponents.append(math.log(jr, self.nU))
-            if self.nU > 1e6:
+            if self.nU > 5e5:
                 e0=self.e0
                 ep = max(1.6, 2.0/(3-e0))
                 nn = self.nU + self.nV
@@ -616,6 +616,8 @@ class HoloScopeOpt:
             print '*** *** shaving ...'
             A0 = np.zeros(self.nU, dtype=int)
             A0[self.CU[k]]=1 #shaving from sub singluar space
+            #import ipdb;ipdb.set_trace()
+            #print 'debug: init size:  ', A0.sum()
             self.start(A0, ptype=self.ptype)
             self.greedyshaving()
             print '*** *** shaving opt size: {}'.format(sum(self.bestA))
@@ -689,7 +691,7 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
     Return
     ---------
     (gbestvx, (gsrows, gbscores)), opt
-        Block (gsrows, gbscores) has the best objective values 'gbestvx' among 
+        Block (gsrows, gbscores) has the best objective values 'gbestvx' among
 	*nblock* blocks.
 	gbestvx: float
             the best objective value of the *nblock* blocks.
@@ -698,7 +700,7 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
         gbscores: list
             is the suspicoius scores for every objects. The index is object id,
             and value is the score. With the scores, you can get the suspicious rank
-	    of the objects.
+        of the objects.
         opt: instance of HoloScopeOpt class
             the class instance which contains all the *nblock* blocks in opt.nbests.
             opt.nbests: list
@@ -716,7 +718,8 @@ def HoloScope(wmat, alg, ptype, qfun, b, ratefile=None, tsfile=None,
     if Ptype.ts in ptype:
         assert(os.path.isfile(tsfile))
         inprop += '+[timestamps] '
-    elif tsfile is not None: #consider sdrop by default
+    #elif tsfile is not None:
+        #consider sdrop by default when Ptype.ts
         inprop += '+[sudden drop]'
     else:
         tsfile=None
