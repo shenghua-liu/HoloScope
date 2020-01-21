@@ -5,6 +5,8 @@ HoloScope
 **HoloScope** is developped for fraud detection based on graphs, which makes *holistic*
 	use of several signals, namely connectivity (i.e., topology), temporal bursts and drops,
 	and rating deviation in a systematic way.
+	
+Support python 2.7, for python 3.6 please refer to [spartan2](https://github.com/shenghua-liu/spartan2)
 
 Abstract:
 ------
